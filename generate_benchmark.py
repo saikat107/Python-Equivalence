@@ -51,9 +51,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-ptests",
         type=int,
-        default=1000,
+        default=10000,
         metavar="N",
-        help="Minimum distinct ptests required for positive pairs (default: 1000)",
+        help="Minimum distinct ptests required for positive pairs (default: 10000)",
     )
     parser.add_argument(
         "--runner-timeout",
@@ -72,6 +72,12 @@ def _parse_args() -> argparse.Namespace:
             "transformation, mathematical, predicate, string"
         ),
     )
+    parser.add_argument(
+        "--include-catalog",
+        action="store_true",
+        help="Also generate entries from the built-in catalog of functions",
+    )
+
     parser.add_argument(
         "--include-random",
         action="store_true",
@@ -99,9 +105,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-loc",
         type=int,
-        default=20,
+        default=50,
         metavar="N",
-        help="Minimum lines of code per AST-random function (default: 20)",
+        help="Minimum lines of code per AST-random function (default: 50)",
     )
     parser.add_argument(
         "--quiet",
@@ -136,8 +142,9 @@ def main() -> None:
     entries = []
 
     # --- Catalog-based entries ---
-    print("Generating entries from built-in catalog…")
-    entries.extend(gen.generate_from_catalog(categories=args.categories))
+    if args.include_catalog:
+        print("Generating entries from built-in catalog…")
+        entries.extend(gen.generate_from_catalog(categories=args.categories))
 
     # --- Template-based random entries ---
     if args.include_random:
