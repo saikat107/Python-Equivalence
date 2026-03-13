@@ -30,6 +30,11 @@ from .runner import SafeRunner
 from .test_gen import InputGenerator
 
 
+def _loc_count(source: str) -> int:
+    """Count non-blank lines in *source*."""
+    return len([ln for ln in source.strip().split("\n") if ln.strip()])
+
+
 def _deduplicate(items: list[Any]) -> list[Any]:
     """Deduplicate a list while preserving order, using repr as the key."""
     seen: set = set()
@@ -51,6 +56,7 @@ class BenchmarkGenerator:
     seed          : random seed for the input generator and program generator
     min_ptests    : minimum number of distinct ptests required for positive pairs
     runner_timeout: wall-clock timeout (seconds) per function batch execution
+    min_loc       : minimum lines of code for all generated functions (0 = no filter)
     verbose       : if True print progress to stdout
     """
 
@@ -59,11 +65,13 @@ class BenchmarkGenerator:
         seed: int = 42,
         min_ptests: int = 1000,
         runner_timeout: float = 60.0,
+        min_loc: int = 0,
         verbose: bool = True,
     ) -> None:
         self._seed = seed
         self._min_ptests = min_ptests
         self._runner = SafeRunner(timeout=runner_timeout)
+        self._min_loc = min_loc
         self._verbose = verbose
 
     # ------------------------------------------------------------------
@@ -85,6 +93,20 @@ class BenchmarkGenerator:
         if categories:
             seeds = [s for s in seeds if s["category"] in categories]
 
+        # Apply min-loc filter: skip seeds whose source or any variant is
+        # below the minimum line count.
+        if self._min_loc > 0:
+            filtered = []
+            for s in seeds:
+                if _loc_count(s["source"]) < self._min_loc:
+                    self._log(
+                        f"  Skipping catalog seed '{s['name']}' — "
+                        f"only {_loc_count(s['source'])} LOC (min {self._min_loc})"
+                    )
+                    continue
+                filtered.append(s)
+            seeds = filtered
+
         entries: list[BenchmarkEntry] = []
         for seed_spec in seeds:
             entries.extend(self._entries_from_spec(seed_spec, provenance="catalog"))
@@ -100,6 +122,20 @@ class BenchmarkGenerator:
         """
         gen = RandomProgramGenerator(seed=self._seed)
         specs = gen.generate(n=n)
+
+        # Apply min-loc filter
+        if self._min_loc > 0:
+            filtered = []
+            for s in specs:
+                if _loc_count(s["source"]) < self._min_loc:
+                    self._log(
+                        f"  Skipping template '{s['name']}' — "
+                        f"only {_loc_count(s['source'])} LOC (min {self._min_loc})"
+                    )
+                    continue
+                filtered.append(s)
+            specs = filtered
+
         entries: list[BenchmarkEntry] = []
         for spec in specs:
             entries.extend(self._entries_from_spec(spec, provenance="template"))
@@ -123,7 +159,9 @@ class BenchmarkGenerator:
         n       : number of random seed functions to generate
         min_loc : minimum lines of code per function (default 20)
         """
-        gen = RandomFunctionGenerator(seed=self._seed, min_loc=min_loc)
+        # Use the higher of the per-call min_loc and the global min_loc
+        effective_min_loc = max(min_loc, self._min_loc)
+        gen = RandomFunctionGenerator(seed=self._seed, min_loc=effective_min_loc)
         specs = gen.generate(n=n)
         entries: list[BenchmarkEntry] = []
         for spec in specs:
@@ -359,7 +397,7 @@ class BenchmarkGenerator:
         return entry if entry.is_valid else None
 
     @staticmethod
-    def _summary_text(entries: List[BenchmarkEntry], json_path: str) -> str:
+    def _summary_text(entries: list[BenchmarkEntry], json_path: str) -> str:
         valid = [e for e in entries if e.is_valid]
         positive = [e for e in valid if e.is_equivalent]
         negative = [e for e in valid if not e.is_equivalent]

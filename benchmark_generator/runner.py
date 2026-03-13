@@ -10,6 +10,9 @@ and the results are deserialised back from the subprocess stdout.  This
 approach avoids the process-pool teardown issues that can occur with
 ``concurrent.futures.ProcessPoolExecutor`` inside test runners.
 
+Each individual function call is guarded by a per-call timeout so that a
+single input that triggers an infinite loop cannot consume the whole batch.
+
 Supported input/output types: int, bool, str, list[int], list[str], None.
 These all round-trip cleanly through JSON.
 """
@@ -27,12 +30,13 @@ from typing import Any, Optional
 # ---------------------------------------------------------------------------
 
 _WORKER_SCRIPT = """\
-import json, sys
+import json, sys, threading
 
 payload = json.loads(sys.stdin.read())
 source    = payload["source"]
 func_name = payload["func_name"]
 inputs    = payload["inputs"]
+per_call_timeout = payload.get("per_call_timeout", 5)
 
 namespace: dict = {}
 try:
@@ -46,13 +50,29 @@ if func is None:
     print(json.dumps([(None, f"NameError: '{func_name}' not found")] * len(inputs)))
     sys.exit(0)
 
+
+def _run_with_timeout(fn, args, timeout):
+    \"\"\"Run fn(*args) with a per-call timeout using a daemon thread.\"\"\"
+    result = [None, None]  # [return_value, error_string]
+
+    def target():
+        try:
+            result[0] = fn(*args)
+        except Exception as exc:
+            result[1] = f"{type(exc).__name__}: {exc}"
+
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        return None, f"TimeoutError: call exceeded {timeout}s limit"
+    return result[0], result[1]
+
+
 results = []
 for inp in inputs:
-    try:
-        r = func(*inp)
-        results.append([r, None])
-    except Exception as exc:
-        results.append([None, f"{type(exc).__name__}: {exc}"])
+    val, err = _run_with_timeout(func, inp, per_call_timeout)
+    results.append([val, err])
 
 print(json.dumps(results))
 """
@@ -68,11 +88,13 @@ class SafeRunner:
 
     Parameters
     ----------
-    timeout : seconds to allow for the *entire* batch
+    timeout          : seconds to allow for the *entire* batch (subprocess level)
+    per_call_timeout : seconds to allow for each individual function call
     """
 
-    def __init__(self, timeout: float = 60.0) -> None:
+    def __init__(self, timeout: float = 60.0, per_call_timeout: float = 5.0) -> None:
         self.timeout = timeout
+        self.per_call_timeout = per_call_timeout
 
     def run_batch(
         self,
@@ -99,6 +121,7 @@ class SafeRunner:
                 "func_name": func_name,
                 # Convert tuples to lists for JSON serialisation
                 "inputs": [list(inp) for inp in inputs],
+                "per_call_timeout": self.per_call_timeout,
             }
         )
 
