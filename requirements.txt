@@ -1,0 +1,3 @@
+# benchmark generator — Python 3.9+ only
+# All dependencies are from the standard library.
+# No additional packages required.
