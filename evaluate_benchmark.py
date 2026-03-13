@@ -16,6 +16,9 @@ Options:
 
 The script uses ``exec`` to compile function source and then calls them directly
 (no subprocess), making evaluation fast.
+
+**Security note**: This script executes arbitrary Python code from the benchmark
+file.  Only evaluate benchmarks from trusted sources.
 """
 
 from __future__ import annotations

@@ -196,13 +196,18 @@ def main() -> None:
             entries = entries[:target_n]
 
     # --- AST-based random entries ---
+    ESTIMATED_ENTRIES_PER_SEED = 4  # each seed typically yields ~4 entries
     if args.include_ast_random and (target_n is None or len(entries) < target_n):
         if target_n is not None:
             # Keep generating AST-random entries until we reach the target.
-            # Each seed function typically produces ~4 entries (2 equiv + 2 mut).
             remaining = target_n - len(entries)
-            # Request enough seeds; each seed produces ~4 entries
-            ast_count = max(args.ast_random_count, (remaining // 3) + 5)
+            # Ceiling division to request enough seeds
+            ast_count = max(
+                args.ast_random_count,
+                (remaining + ESTIMATED_ENTRIES_PER_SEED - 1)
+                // ESTIMATED_ENTRIES_PER_SEED
+                + 5,
+            )
         else:
             ast_count = args.ast_random_count
 

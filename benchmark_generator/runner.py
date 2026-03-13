@@ -52,7 +52,13 @@ if func is None:
 
 
 def _run_with_timeout(fn, args, timeout):
-    \"\"\"Run fn(*args) with a per-call timeout using a daemon thread.\"\"\"
+    \"\"\"Run fn(*args) with a per-call timeout using a daemon thread.
+
+    Note: if the function does not return within the timeout, the daemon
+    thread continues running in the background until the subprocess exits.
+    The subprocess-level batch timeout (--runner-timeout) guarantees that
+    all leaked threads are cleaned up when the process is killed.
+    \"\"\"
     result = [None, None]  # [return_value, error_string]
 
     def target():
