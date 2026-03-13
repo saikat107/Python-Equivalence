@@ -137,30 +137,30 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--equiv-sim-min",
         type=float,
-        default=0.1,
+        default=0,
         metavar="F",
-        help="Minimum AST similarity for equivalent pairs (default: 0.1)",
+        help="Minimum AST similarity for equivalent pairs (default: 0)",
     )
     parser.add_argument(
         "--equiv-sim-max",
         type=float,
-        default=0.5,
+        default=1.000001,
         metavar="F",
-        help="Maximum AST similarity for equivalent pairs (default: 0.5)",
+        help="Maximum AST similarity for equivalent pairs (default: 1.000001)",
     )
     parser.add_argument(
         "--non-equiv-sim-min",
         type=float,
-        default=0.7,
+        default=0,
         metavar="F",
-        help="Minimum AST similarity for non-equivalent pairs (default: 0.7)",
+        help="Minimum AST similarity for non-equivalent pairs (default: 0)",
     )
     parser.add_argument(
         "--non-equiv-sim-max",
         type=float,
-        default=0.95,
+        default=1.00001,
         metavar="F",
-        help="Maximum AST similarity for non-equivalent pairs (default: 0.95)",
+        help="Maximum AST similarity for non-equivalent pairs (default: 1.00001)",
     )
     return parser.parse_args()
 

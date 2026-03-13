@@ -451,7 +451,7 @@ class BenchmarkGenerator:
         if entry.is_valid:
             label = "positive" if is_equivalent else "negative"
             self._log(
-                f"    ✓ {label} pair: {len(ptests)} ptests, {len(ntests)} ntests"
+                f"    ✓ {label} pair: {len(ptests)} ptests, {len(ntests)} ntests, AST sim {sim:.3f}"
             )
         else:
             label = "positive" if is_equivalent else "negative"
@@ -460,7 +460,7 @@ class BenchmarkGenerator:
                 if is_equivalent
                 else f"need ≥1 ntest, got {len(ntests)}"
             )
-            self._log(f"    ✗ {label} pair skipped — {reason}")
+            self._log(f"    ✗ {label} pair skipped — {reason} AST sim {sim:.3f}")
 
         return entry if entry.is_valid else None
 
