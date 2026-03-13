@@ -28,7 +28,7 @@ import os
 # Make sure the package is importable when run from the repo root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from benchmark_generator.generator import BenchmarkGenerator
+from benchmark_generator.generator import BenchmarkGenerator, deduplicate_entries
 
 
 def _parse_args() -> argparse.Namespace:
@@ -222,6 +222,12 @@ def main() -> None:
         entries.extend(new_entries)
         if target_n is not None and len(entries) >= target_n:
             entries = entries[:target_n]
+
+    # --- Deduplicate (p1, p2) pairs ---
+    before = len(entries)
+    entries = deduplicate_entries(entries)
+    if before != len(entries):
+        print(f"\nDeduplicated: {before} → {len(entries)} entries")
 
     # --- Save ---
     print("\nSaving benchmark…")

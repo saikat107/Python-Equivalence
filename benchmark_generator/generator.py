@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 from typing import Any, Optional, Sequence
@@ -44,6 +45,35 @@ def _deduplicate(items: list[Any]) -> list[Any]:
         if k not in seen:
             seen.add(k)
             result.append(x)
+    return result
+
+
+def _normalize_source(source: str, func_name: str) -> str:
+    """Normalize *source* by replacing *func_name* with a fixed placeholder.
+
+    This allows two implementations that are identical except for the
+    function name to be recognized as duplicates.
+    """
+    return re.sub(r"\b" + re.escape(func_name) + r"\b", "_F_", source.strip())
+
+
+def deduplicate_entries(entries: list[BenchmarkEntry]) -> list[BenchmarkEntry]:
+    """Remove duplicate (p1, p2) pairs from *entries*, preserving order.
+
+    Two entries are considered duplicates when their source-code bodies
+    are identical after normalising away the function name.  The first
+    occurrence is kept; later duplicates are dropped.
+    """
+    seen: set[tuple[str, str]] = set()
+    result: list[BenchmarkEntry] = []
+    for entry in entries:
+        key = (
+            _normalize_source(entry.p1_source, entry.func_name),
+            _normalize_source(entry.p2_source, entry.func_name),
+        )
+        if key not in seen:
+            seen.add(key)
+            result.append(entry)
     return result
 
 

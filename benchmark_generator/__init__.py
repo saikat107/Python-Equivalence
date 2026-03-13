@@ -6,7 +6,12 @@ Usage (from repo root):
 """
 
 from .models import BenchmarkEntry
-from .generator import BenchmarkGenerator
+from .generator import BenchmarkGenerator, deduplicate_entries
 from .random_func_gen import RandomFunctionGenerator
 
-__all__ = ["BenchmarkEntry", "BenchmarkGenerator", "RandomFunctionGenerator"]
+__all__ = [
+    "BenchmarkEntry",
+    "BenchmarkGenerator",
+    "RandomFunctionGenerator",
+    "deduplicate_entries",
+]
