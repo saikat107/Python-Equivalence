@@ -85,6 +85,25 @@ def _parse_args() -> argparse.Namespace:
         help="Number of random seed functions to generate (default: 20)",
     )
     parser.add_argument(
+        "--include-ast-random",
+        action="store_true",
+        help="Also generate entries from AST-based random function generation",
+    )
+    parser.add_argument(
+        "--ast-random-count",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Number of AST-random seed functions to generate (default: 10)",
+    )
+    parser.add_argument(
+        "--min-loc",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Minimum lines of code per AST-random function (default: 20)",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress progress output",
@@ -102,6 +121,7 @@ def main() -> None:
     print(f"  min-ptests    : {args.min_ptests}")
     print(f"  output dir    : {args.output}")
     print(f"  include-random: {args.include_random}")
+    print(f"  include-ast   : {args.include_ast_random}")
     if args.categories:
         print(f"  categories    : {', '.join(args.categories)}")
     print()
@@ -123,6 +143,14 @@ def main() -> None:
     if args.include_random:
         print(f"\nGenerating {args.random_count} random template functions…")
         entries.extend(gen.generate_from_templates(n=args.random_count))
+
+    # --- AST-based random entries ---
+    if args.include_ast_random:
+        print(f"\nGenerating {args.ast_random_count} AST-random functions (min {args.min_loc} LOC)…")
+        entries.extend(gen.generate_from_random_ast(
+            n=args.ast_random_count,
+            min_loc=args.min_loc,
+        ))
 
     # --- Save ---
     print("\nSaving benchmark…")

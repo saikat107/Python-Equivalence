@@ -67,6 +67,31 @@ class TestBenchmarkGeneratorIntegration:
         assert "entries" in data
         assert data["total_entries"] == len(entries)
 
+    def test_tests_stored_separately(self, small_benchmark):
+        """Test data (ptests/ntests) should be in separate files, not inline."""
+        entries, output_dir = small_benchmark
+        # tests/ subdirectory must exist
+        tests_dir = os.path.join(output_dir, "tests")
+        assert os.path.isdir(tests_dir)
+        # One test file per entry
+        test_files = [f for f in os.listdir(tests_dir) if f.endswith("_tests.json")]
+        assert len(test_files) == len(entries)
+        # Each entry in the main JSON should reference tests_file, not embed ptests/ntests
+        json_files = [f for f in os.listdir(output_dir) if f.endswith(".json")]
+        path = os.path.join(output_dir, json_files[0])
+        with open(path) as fh:
+            data = json.load(fh)
+        for ed in data["entries"]:
+            assert "tests_file" in ed
+            assert "ptests" not in ed
+            assert "ntests" not in ed
+        # Each test file is loadable and has ptests/ntests
+        for tf in test_files:
+            with open(os.path.join(tests_dir, tf)) as fh:
+                td = json.load(fh)
+            assert "ptests" in td
+            assert "ntests" in td
+
     def test_summary_written(self, small_benchmark):
         _, output_dir = small_benchmark
         assert os.path.exists(os.path.join(output_dir, "summary.txt"))
