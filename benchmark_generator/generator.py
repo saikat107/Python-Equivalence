@@ -25,6 +25,7 @@ from typing import Any, Optional, Sequence
 from .catalog import CATALOG
 from .models import BenchmarkEntry
 from .program_gen import RandomProgramGenerator
+from .random_func_gen import RandomFunctionGenerator
 from .runner import SafeRunner
 from .test_gen import InputGenerator
 
@@ -104,6 +105,29 @@ class BenchmarkGenerator:
             entries.extend(self._entries_from_spec(spec, provenance="template"))
         return entries
 
+    def generate_from_random_functions(
+        self,
+        n: int = 20,
+        min_loc: int = 20,
+    ) -> list[BenchmarkEntry]:
+        """
+        Build benchmark entries from randomly generated functions.
+
+        Each function has a random name, arbitrary statements, branches, and
+        loops, with at least *min_loc* non-blank lines of code.
+
+        Parameters
+        ----------
+        n       : number of random seed functions to generate
+        min_loc : minimum lines of code per function (default 20)
+        """
+        gen = RandomFunctionGenerator(seed=self._seed, min_loc=min_loc)
+        specs = gen.generate(n=n)
+        entries: list[BenchmarkEntry] = []
+        for spec in specs:
+            entries.extend(self._entries_from_spec(spec, provenance="random_generated"))
+        return entries
+
     def save(
         self,
         entries: list[BenchmarkEntry],
@@ -112,19 +136,36 @@ class BenchmarkGenerator:
         """
         Serialise *entries* to a timestamped JSON file in *output_dir*.
 
-        Returns the path of the written file.
+        Tests (ptests / ntests) are stored in a separate ``tests/``
+        subdirectory — one JSON file per entry.  The main benchmark JSON
+        references the test files by path but does not embed them inline.
+
+        Returns the path of the written benchmark JSON file.
         """
         os.makedirs(output_dir, exist_ok=True)
+        tests_dir = os.path.join(output_dir, "tests")
+        os.makedirs(tests_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         path = os.path.join(output_dir, f"benchmark_{timestamp}.json")
 
+        # --- Write per-entry test files ---
+        for entry in entries:
+            test_file = os.path.join(tests_dir, f"{entry.entry_id}.json")
+            with open(test_file, "w", encoding="utf-8") as fh:
+                json.dump(
+                    {"ptests": entry.ptests, "ntests": entry.ntests},
+                    fh,
+                    ensure_ascii=False,
+                )
+
+        # --- Write main benchmark JSON (without inline tests) ---
         payload = {
             "generated_at": timestamp,
             "total_entries": len(entries),
             "valid_entries": sum(1 for e in entries if e.is_valid),
             "positive_pairs": sum(1 for e in entries if e.is_equivalent and e.is_valid),
             "negative_pairs": sum(1 for e in entries if not e.is_equivalent and e.is_valid),
-            "entries": [e.to_dict() for e in entries],
+            "entries": [e.to_summary_dict() for e in entries],
         }
 
         with open(path, "w", encoding="utf-8") as fh:
@@ -305,7 +346,7 @@ class BenchmarkGenerator:
         return entry if entry.is_valid else None
 
     @staticmethod
-    def _summary_text(entries: List[BenchmarkEntry], json_path: str) -> str:
+    def _summary_text(entries: list[BenchmarkEntry], json_path: str) -> str:
         valid = [e for e in entries if e.is_valid]
         positive = [e for e in valid if e.is_equivalent]
         negative = [e for e in valid if not e.is_equivalent]

@@ -85,6 +85,25 @@ def _parse_args() -> argparse.Namespace:
         help="Number of random seed functions to generate (default: 20)",
     )
     parser.add_argument(
+        "--include-random-funcs",
+        action="store_true",
+        help="Also generate entries from randomly generated functions (random names, ≥20 LOC)",
+    )
+    parser.add_argument(
+        "--random-func-count",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Number of random-function seeds to generate (default: 20)",
+    )
+    parser.add_argument(
+        "--min-loc",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Minimum lines of code per random function (default: 20)",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress progress output",
@@ -102,6 +121,8 @@ def main() -> None:
     print(f"  min-ptests    : {args.min_ptests}")
     print(f"  output dir    : {args.output}")
     print(f"  include-random: {args.include_random}")
+    if args.include_random_funcs:
+        print(f"  random-funcs  : {args.random_func_count} (min LOC: {args.min_loc})")
     if args.categories:
         print(f"  categories    : {', '.join(args.categories)}")
     print()
@@ -123,6 +144,19 @@ def main() -> None:
     if args.include_random:
         print(f"\nGenerating {args.random_count} random template functions…")
         entries.extend(gen.generate_from_templates(n=args.random_count))
+
+    # --- Randomly generated function entries ---
+    if args.include_random_funcs:
+        print(
+            f"\nGenerating {args.random_func_count} random functions "
+            f"(min LOC: {args.min_loc})…"
+        )
+        entries.extend(
+            gen.generate_from_random_functions(
+                n=args.random_func_count,
+                min_loc=args.min_loc,
+            )
+        )
 
     # --- Save ---
     print("\nSaving benchmark…")

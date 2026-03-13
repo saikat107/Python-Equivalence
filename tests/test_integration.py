@@ -55,17 +55,42 @@ class TestBenchmarkGeneratorIntegration:
 
     def test_json_output_written(self, small_benchmark):
         _, output_dir = small_benchmark
-        json_files = [f for f in os.listdir(output_dir) if f.endswith(".json")]
-        assert len(json_files) == 1
+        # Main benchmark JSON is at the top level (not inside tests/)
+        top_json = [
+            f for f in os.listdir(output_dir)
+            if f.endswith(".json") and os.path.isfile(os.path.join(output_dir, f))
+        ]
+        assert len(top_json) == 1
 
     def test_json_is_parseable(self, small_benchmark):
         entries, output_dir = small_benchmark
-        json_files = [f for f in os.listdir(output_dir) if f.endswith(".json")]
-        path = os.path.join(output_dir, json_files[0])
+        top_json = [
+            f for f in os.listdir(output_dir)
+            if f.endswith(".json") and os.path.isfile(os.path.join(output_dir, f))
+        ]
+        path = os.path.join(output_dir, top_json[0])
         with open(path) as fh:
             data = json.load(fh)
         assert "entries" in data
         assert data["total_entries"] == len(entries)
+        # Tests should NOT be inlined in the JSON
+        for entry_dict in data["entries"]:
+            assert "ptests" not in entry_dict
+            assert "ntests" not in entry_dict
+            assert "tests_file" in entry_dict
+
+    def test_tests_stored_separately(self, small_benchmark):
+        """Each entry's ptests/ntests should be saved in a separate file."""
+        entries, output_dir = small_benchmark
+        tests_dir = os.path.join(output_dir, "tests")
+        assert os.path.isdir(tests_dir)
+        for e in entries:
+            test_file = os.path.join(tests_dir, f"{e.entry_id}.json")
+            assert os.path.exists(test_file), f"Missing test file for {e.entry_id}"
+            with open(test_file) as fh:
+                data = json.load(fh)
+            assert "ptests" in data
+            assert "ntests" in data
 
     def test_summary_written(self, small_benchmark):
         _, output_dir = small_benchmark

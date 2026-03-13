@@ -71,6 +71,27 @@ class BenchmarkEntry:
             "metadata": self.metadata,
         }
 
+    def to_summary_dict(self) -> dict[str, Any]:
+        """Like :meth:`to_dict` but *without* inline ptests/ntests.
+
+        The tests are stored in a separate directory; this dict only
+        records their counts and the relative file path.
+        """
+        return {
+            "entry_id": self.entry_id,
+            "func_name": self.func_name,
+            "param_types": self.param_types,
+            "return_type": self.return_type,
+            "p1_source": self.p1_source,
+            "p2_source": self.p2_source,
+            "is_equivalent": self.is_equivalent,
+            "num_ptests": len(self.ptests),
+            "num_ntests": len(self.ntests),
+            "is_valid": self.is_valid,
+            "metadata": self.metadata,
+            "tests_file": f"tests/{self.entry_id}.json",
+        }
+
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "BenchmarkEntry":
         return cls(
