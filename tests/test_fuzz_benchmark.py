@@ -286,6 +286,17 @@ class TestFuzzEntry(unittest.TestCase):
         self.assertIn("status", result)
         self.assertGreater(result["new_tests_generated"], 0)
 
+    def test_no_new_tests_status(self):
+        """When max_tests=0, status should be 'no_new_tests'."""
+        entry = self._make_entry(_ADD_SOURCE, _ADD_EQUIV_SOURCE, True)
+        tests_data = {"ptests": [[1, 2]], "ntests": []}
+        result = fuzz_entry(
+            entry, tests_data,
+            max_tests=0, max_time=30, per_call_timeout=5, rng_seed=42,
+        )
+        self.assertEqual(result["new_tests_generated"], 0)
+        self.assertEqual(result["status"], "no_new_tests")
+
 
 # ---------------------------------------------------------------------------
 # Integration test with a real (tiny) benchmark file

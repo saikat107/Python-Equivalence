@@ -564,7 +564,10 @@ def fuzz_entry(
     # For the reporting, treat new_ptests as "agree" tests and
     # new_ntests as "disagree" tests.  Then determine status the same
     # way as evaluate_benchmark.py.
-    if is_equivalent:
+    if not new_tests:
+        # No new tests were generated — cannot validate
+        status = "no_new_tests"
+    elif is_equivalent:
         # Equivalent pairs: all new tests should agree
         if ptest_disagree == 0 and ptest_errors == 0:
             status = "pass"
@@ -690,6 +693,7 @@ def main() -> None:
     passed = 0
     failed = 0
     errors = 0
+    no_new_tests = 0
     total_new_tests = 0
 
     for i, result in enumerate(results):
@@ -697,6 +701,8 @@ def main() -> None:
             passed += 1
         elif result["status"] == "compile_error":
             errors += 1
+        elif result["status"] == "no_new_tests":
+            no_new_tests += 1
         else:
             failed += 1
 
@@ -725,6 +731,7 @@ def main() -> None:
     print(f"  Total evaluated     : {total}")
     print(f"  Passed              : {passed}")
     print(f"  Failed              : {failed}")
+    print(f"  No new tests        : {no_new_tests}")
     print(f"  Compile errors      : {errors}")
     print(f"  Total new tests     : {total_new_tests}")
     print(f"  Total fuzz time     : {total_time:.1f}s")
@@ -755,6 +762,7 @@ def main() -> None:
                 "total": total,
                 "passed": passed,
                 "failed": failed,
+                "no_new_tests": no_new_tests,
                 "compile_errors": errors,
                 "total_new_tests": total_new_tests,
                 "pass_rate": round(passed / total * 100, 1) if total else 0,
