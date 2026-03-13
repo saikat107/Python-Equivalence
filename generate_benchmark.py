@@ -12,6 +12,7 @@ Common options:
     python generate_benchmark.py --include-random --random-count 30
     python generate_benchmark.py --categories aggregation filtering
     python generate_benchmark.py --seed 123 --min-ptests 500
+    python generate_benchmark.py --num-examples 500
 
 The output directory will contain:
     benchmark_<timestamp>.json   — all benchmark entries in JSON
@@ -63,6 +64,13 @@ def _parse_args() -> argparse.Namespace:
         help="Wall-clock timeout in seconds per function batch (default: 60)",
     )
     parser.add_argument(
+        "--per-call-timeout",
+        type=float,
+        default=5.0,
+        metavar="SECS",
+        help="Timeout in seconds per individual function call (default: 5)",
+    )
+    parser.add_argument(
         "--categories",
         nargs="+",
         metavar="CAT",
@@ -107,7 +115,19 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=50,
         metavar="N",
-        help="Minimum lines of code per AST-random function (default: 50)",
+        help="Minimum lines of code per function, applied to all sources (default: 50)",
+    )
+    parser.add_argument(
+        "--num-examples",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Target total number of benchmark entries to generate. "
+            "When set, the generator defaults to AST-random generation "
+            "and continues producing entries until N are reached. "
+            "Overrides --ast-random-count."
+        ),
     )
     parser.add_argument(
         "--quiet",
@@ -120,44 +140,88 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
 
+    # If --num-examples is set and no explicit source is enabled, default to
+    # AST-random generation.
+    use_num_examples = args.num_examples is not None
+    if use_num_examples and not (
+        args.include_catalog or args.include_random or args.include_ast_random
+    ):
+        args.include_ast_random = True
+
     print("=" * 60)
     print("Python Equivalence Benchmark Generator")
     print("=" * 60)
-    print(f"  seed          : {args.seed}")
-    print(f"  min-ptests    : {args.min_ptests}")
-    print(f"  output dir    : {args.output}")
-    print(f"  include-random: {args.include_random}")
-    print(f"  include-ast   : {args.include_ast_random}")
+    print(f"  seed            : {args.seed}")
+    print(f"  min-ptests      : {args.min_ptests}")
+    print(f"  min-loc         : {args.min_loc}")
+    print(f"  output dir      : {args.output}")
+    print(f"  include-catalog : {args.include_catalog}")
+    print(f"  include-random  : {args.include_random}")
+    print(f"  include-ast     : {args.include_ast_random}")
+    if use_num_examples:
+        print(f"  num-examples    : {args.num_examples}")
     if args.categories:
-        print(f"  categories    : {', '.join(args.categories)}")
+        print(f"  categories      : {', '.join(args.categories)}")
     print()
 
     gen = BenchmarkGenerator(
         seed=args.seed,
         min_ptests=args.min_ptests,
         runner_timeout=args.runner_timeout,
+        min_loc=args.min_loc,
         verbose=not args.quiet,
     )
 
     entries = []
 
+    target_n = args.num_examples  # None if not set
+
     # --- Catalog-based entries ---
     if args.include_catalog:
         print("Generating entries from built-in catalog…")
         entries.extend(gen.generate_from_catalog(categories=args.categories))
+        if target_n is not None and len(entries) >= target_n:
+            entries = entries[:target_n]
 
     # --- Template-based random entries ---
-    if args.include_random:
-        print(f"\nGenerating {args.random_count} random template functions…")
-        entries.extend(gen.generate_from_templates(n=args.random_count))
+    if args.include_random and (target_n is None or len(entries) < target_n):
+        count = args.random_count
+        if target_n is not None:
+            # Request enough templates to fill remaining quota
+            count = max(count, target_n - len(entries))
+        print(f"\nGenerating {count} random template functions…")
+        new_entries = gen.generate_from_templates(n=count)
+        entries.extend(new_entries)
+        if target_n is not None and len(entries) >= target_n:
+            entries = entries[:target_n]
 
     # --- AST-based random entries ---
-    if args.include_ast_random:
-        print(f"\nGenerating {args.ast_random_count} AST-random functions (min {args.min_loc} LOC)…")
-        entries.extend(gen.generate_from_random_ast(
-            n=args.ast_random_count,
+    ESTIMATED_ENTRIES_PER_SEED = 4  # each seed typically yields ~4 entries
+    if args.include_ast_random and (target_n is None or len(entries) < target_n):
+        if target_n is not None:
+            # Keep generating AST-random entries until we reach the target.
+            remaining = target_n - len(entries)
+            # Ceiling division to request enough seeds
+            ast_count = max(
+                args.ast_random_count,
+                (remaining + ESTIMATED_ENTRIES_PER_SEED - 1)
+                // ESTIMATED_ENTRIES_PER_SEED
+                + 5,
+            )
+        else:
+            ast_count = args.ast_random_count
+
+        print(
+            f"\nGenerating {ast_count} AST-random functions "
+            f"(min {args.min_loc} LOC)…"
+        )
+        new_entries = gen.generate_from_random_ast(
+            n=ast_count,
             min_loc=args.min_loc,
-        ))
+        )
+        entries.extend(new_entries)
+        if target_n is not None and len(entries) >= target_n:
+            entries = entries[:target_n]
 
     # --- Save ---
     print("\nSaving benchmark…")
