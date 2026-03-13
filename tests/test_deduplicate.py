@@ -164,3 +164,43 @@ class TestDeduplicateEntries:
         )
         result = deduplicate_entries([e1, e2])
         assert len(result) == 1
+
+    def test_identical_p1_p2_removed(self):
+        """Entries where p1 and p2 are the same should be removed."""
+        e = _entry(
+            func_name="f",
+            p1="def f(x): return x",
+            p2="def f(x): return x",
+            entry_id="1",
+        )
+        result = deduplicate_entries([e])
+        assert len(result) == 0
+
+    def test_identical_p1_p2_after_normalization_removed(self):
+        """p1==p2 after normalization (different func name) should be removed."""
+        e = _entry(
+            func_name="foo",
+            p1="def foo(x): return x",
+            p2="  def foo(x): return x  ",
+            entry_id="1",
+        )
+        result = deduplicate_entries([e])
+        assert len(result) == 0
+
+    def test_identical_p1_p2_mixed_with_valid(self):
+        """Only identical-source entries are removed; valid ones are kept."""
+        e1 = _entry(
+            func_name="f",
+            p1="def f(x): return x",
+            p2="def f(x): return x",
+            entry_id="1",
+        )
+        e2 = _entry(
+            func_name="f",
+            p1="def f(x): return x",
+            p2="def f(x): return x + 1",
+            entry_id="2",
+        )
+        result = deduplicate_entries([e1, e2])
+        assert len(result) == 1
+        assert result[0].entry_id == "2"

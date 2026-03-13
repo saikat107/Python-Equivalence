@@ -120,6 +120,18 @@ class TestBenchmarkGeneratorIntegration:
                 f"Duplicate ntests in entry {e.entry_id} ({e.func_name})"
             )
 
+    def test_no_identical_p1_p2(self, small_benchmark):
+        """No entry should have p1 and p2 that are identical."""
+        from benchmark_generator.generator import _normalize_source
+
+        entries, _ = small_benchmark
+        for e in entries:
+            p1_norm = _normalize_source(e.p1_source, e.func_name)
+            p2_norm = _normalize_source(e.p2_source, e.func_name)
+            assert p1_norm != p2_norm, (
+                f"Entry {e.entry_id} ({e.func_name}) has identical p1 and p2"
+            )
+
     def test_random_template_entries(self, tmp_path):
         """Template-generated entries should also pass validity."""
         gen = BenchmarkGenerator(

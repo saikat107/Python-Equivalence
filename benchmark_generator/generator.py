@@ -63,14 +63,18 @@ def deduplicate_entries(entries: list[BenchmarkEntry]) -> list[BenchmarkEntry]:
     Two entries are considered duplicates when their source-code bodies
     are identical after normalising away the function name.  The first
     occurrence is kept; later duplicates are dropped.
+
+    Entries where p1 and p2 are identical (after normalisation) are also
+    removed — trivially equivalent pairs are of no use.
     """
     seen: set[tuple[str, str]] = set()
     result: list[BenchmarkEntry] = []
     for entry in entries:
-        key = (
-            _normalize_source(entry.p1_source, entry.func_name),
-            _normalize_source(entry.p2_source, entry.func_name),
-        )
+        p1_norm = _normalize_source(entry.p1_source, entry.func_name)
+        p2_norm = _normalize_source(entry.p2_source, entry.func_name)
+        if p1_norm == p2_norm:
+            continue
+        key = (p1_norm, p2_norm)
         if key not in seen:
             seen.add(key)
             result.append(entry)
@@ -362,6 +366,16 @@ class BenchmarkGenerator:
         Generate inputs, run both functions, partition ptests/ntests, and
         return a BenchmarkEntry — or None if validity criteria are not met.
         """
+        # Reject pairs where p1 and p2 are identical — trivially equivalent
+        # pairs are of no use.
+        if _normalize_source(p1_source, func_name) == _normalize_source(
+            p2_source, func_name
+        ):
+            self._log(
+                f"    ✗ Skipping pair: p1 and p2 are identical"
+            )
+            return None
+
         # Generate inputs.  When a domain constraint filter is provided we
         # generate extra candidates so that, after filtering, we still have a
         # sufficient pool.
