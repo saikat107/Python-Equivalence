@@ -1023,7 +1023,7 @@ def run_length_encode(xs: list) -> list:
     result.append([current_val, current_count])
     return result
 """),
-                "description": "initialises run count to 0 instead of 1 — all counts off by one",
+                "description": "initializes run count to 0 instead of 1 — all counts off by one",
             },
             {
                 "source": _s("""
@@ -1156,7 +1156,7 @@ def compute_histogram(xs: list) -> list:
         result.append(pair)
     return result
 """),
-                "description": "initialises first occurrence count to 0 — all counts off by one",
+                "description": "initializes first occurrence count to 0 — all counts off by one",
             },
         ],
     },
@@ -1366,7 +1366,7 @@ def longest_plateau(xs: list) -> int:
         max_len = current_len
     return max_len
 """),
-                "description": "initialises run length to 0 instead of 1 — all run lengths off by one",
+                "description": "initializes run length to 0 instead of 1 — all run lengths off by one",
             },
             {
                 "source": _s("""
