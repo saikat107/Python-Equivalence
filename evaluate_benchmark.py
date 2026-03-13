@@ -29,8 +29,12 @@ import os
 import sys
 import threading
 
+from tqdm import tqdm
+
 # Make sure the package is importable when run from the repo root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from benchmark_generator.progress import setup_file_logger, log_message
 
 
 def _parse_args() -> argparse.Namespace:
@@ -184,11 +188,15 @@ def evaluate_entry(entry: dict, tests_data: dict, per_call_timeout: float) -> di
 
 def main() -> None:
     args = _parse_args()
+    logger = setup_file_logger("evaluate_benchmark")
+
+    def _log(msg: str) -> None:
+        log_message(logger, msg)
 
     # Load the benchmark JSON
     benchmark_path = args.benchmark
     if not os.path.exists(benchmark_path):
-        print(f"Error: benchmark file not found: {benchmark_path}", file=sys.stderr)
+        _log(f"Error: benchmark file not found: {benchmark_path}")
         sys.exit(1)
 
     with open(benchmark_path, encoding="utf-8") as fh:
@@ -197,26 +205,26 @@ def main() -> None:
     benchmark_dir = os.path.dirname(os.path.abspath(benchmark_path))
     entries = benchmark.get("entries", [])
 
-    print("=" * 60)
-    print("Python Equivalence Benchmark Evaluator")
-    print("=" * 60)
-    print(f"  Benchmark file   : {benchmark_path}")
-    print(f"  Total entries    : {len(entries)}")
-    print(f"  Per-call timeout : {args.per_call_timeout}s")
-    print()
+    _log("=" * 60)
+    _log("Python Equivalence Benchmark Evaluator")
+    _log("=" * 60)
+    _log(f"  Benchmark file   : {benchmark_path}")
+    _log(f"  Total entries    : {len(entries)}")
+    _log(f"  Per-call timeout : {args.per_call_timeout}s")
+    _log("")
 
     results = []
     passed = 0
     failed = 0
     errors = 0
 
-    for i, entry in enumerate(entries):
+    for i, entry in enumerate(tqdm(entries, desc="Evaluating", unit="entry")):
         # Load test data
         tests_file = entry.get("tests_file")
         if tests_file:
             tests_path = os.path.join(benchmark_dir, tests_file)
             if not os.path.exists(tests_path):
-                print(f"  Warning: test file not found: {tests_path}")
+                _log(f"  Warning: test file not found: {tests_path}")
                 continue
             with open(tests_path, encoding="utf-8") as fh:
                 tests_data = json.load(fh)
@@ -240,7 +248,7 @@ def main() -> None:
         if args.verbose:
             label = "EQ" if result["is_equivalent"] else "NE"
             status = result["status"].upper()
-            print(
+            _log(
                 f"  [{i + 1:>4}/{len(entries)}] {result['func_name']:<30} "
                 f"[{label}] {status:>13}  "
                 f"ptests: {result['ptest_agree']}/{result['num_ptests']} agree  "
@@ -249,28 +257,28 @@ def main() -> None:
 
     # Summary
     total = len(results)
-    print()
-    print("=" * 60)
-    print("Evaluation Summary")
-    print("=" * 60)
-    print(f"  Total evaluated : {total}")
-    print(f"  Passed          : {passed}")
-    print(f"  Failed          : {failed}")
-    print(f"  Compile errors  : {errors}")
+    _log("")
+    _log("=" * 60)
+    _log("Evaluation Summary")
+    _log("=" * 60)
+    _log(f"  Total evaluated : {total}")
+    _log(f"  Passed          : {passed}")
+    _log(f"  Failed          : {failed}")
+    _log(f"  Compile errors  : {errors}")
     if total > 0:
-        print(f"  Pass rate       : {passed / total * 100:.1f}%")
+        _log(f"  Pass rate       : {passed / total * 100:.1f}%")
 
     # Breakdown by pair type
     eq_results = [r for r in results if r["is_equivalent"]]
     ne_results = [r for r in results if not r["is_equivalent"]]
     if eq_results:
         eq_pass = sum(1 for r in eq_results if r["status"] == "pass")
-        print(f"\n  Equivalent pairs   : {eq_pass}/{len(eq_results)} passed")
+        _log(f"\n  Equivalent pairs   : {eq_pass}/{len(eq_results)} passed")
     if ne_results:
         ne_pass = sum(1 for r in ne_results if r["status"] == "pass")
-        print(f"  Non-equivalent pairs: {ne_pass}/{len(ne_results)} passed")
+        _log(f"  Non-equivalent pairs: {ne_pass}/{len(ne_results)} passed")
 
-    print("=" * 60)
+    _log("=" * 60)
 
 
 if __name__ == "__main__":
