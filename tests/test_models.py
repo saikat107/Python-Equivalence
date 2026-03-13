@@ -52,3 +52,33 @@ class TestBenchmarkEntry:
                     "p1_source", "p2_source", "ptests", "ntests",
                     "is_equivalent", "num_ptests", "num_ntests", "is_valid"):
             assert key in d, f"Missing key: {key}"
+
+    def test_positive_invalid_with_duplicate_ptests(self):
+        """1000 ptests that are not all distinct should be invalid."""
+        e = BenchmarkEntry(
+            entry_id="dup-test",
+            func_name="f",
+            param_types=["int"],
+            return_type="int",
+            p1_source="def f(x): return x",
+            p2_source="def f(x): return x",
+            ptests=[[0]] * 1000,  # 1000 copies of the same test
+            ntests=[],
+            is_equivalent=True,
+        )
+        assert not e.is_valid  # only 1 distinct ptest
+
+    def test_negative_invalid_with_duplicate_ntests(self):
+        """ntests with only duplicates should be invalid."""
+        e = BenchmarkEntry(
+            entry_id="dup-ntest",
+            func_name="f",
+            param_types=["int"],
+            return_type="int",
+            p1_source="def f(x): return x",
+            p2_source="def f(x): return x + 1",
+            ptests=[],
+            ntests=[],
+            is_equivalent=False,
+        )
+        assert not e.is_valid

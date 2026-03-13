@@ -367,6 +367,10 @@ class BenchmarkGenerator:
             else:
                 ntests.append(inp_list)
 
+        # Ensure all test cases are distinct
+        ptests = _deduplicate(ptests)
+        ntests = _deduplicate(ntests)
+
         entry = BenchmarkEntry(
             entry_id=str(uuid.uuid4()),
             func_name=func_name,
