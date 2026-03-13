@@ -21,7 +21,7 @@ import os
 import re
 import time
 import uuid
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 from .ast_similarity import ast_similarity
 from .catalog import CATALOG
@@ -106,7 +106,7 @@ class BenchmarkGenerator:
         equiv_sim_range: tuple[float, float] = (0.1, 0.5),
         non_equiv_sim_range: tuple[float, float] = (0.7, 0.95),
         verbose: bool = True,
-        log_fn: Optional[Any] = None,
+        log_fn: Optional[Callable[[str], None]] = None,
     ) -> None:
         self._seed = seed
         self._min_ptests = min_ptests
