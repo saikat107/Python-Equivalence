@@ -69,7 +69,7 @@ class TestBenchmarkEntry:
         assert not e.is_valid  # only 1 distinct ptest
 
     def test_negative_invalid_with_duplicate_ntests(self):
-        """ntests with only duplicates should be invalid."""
+        """ntests with only duplicates should count as a single distinct ntest."""
         e = BenchmarkEntry(
             entry_id="dup-ntest",
             func_name="f",
@@ -78,7 +78,7 @@ class TestBenchmarkEntry:
             p1_source="def f(x): return x",
             p2_source="def f(x): return x + 1",
             ptests=[],
-            ntests=[],
+            ntests=[[1]] * 5,  # 5 copies of the same ntest — still 1 distinct
             is_equivalent=False,
         )
-        assert not e.is_valid
+        assert e.is_valid  # 1 distinct ntest is enough
