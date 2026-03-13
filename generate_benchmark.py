@@ -25,10 +25,13 @@ import argparse
 import sys
 import os
 
+from tqdm import tqdm
+
 # Make sure the package is importable when run from the repo root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from benchmark_generator.generator import BenchmarkGenerator, deduplicate_entries
+from benchmark_generator.progress import setup_file_logger, log_message
 
 
 def _parse_args() -> argparse.Namespace:
@@ -167,6 +170,10 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    logger = setup_file_logger("generate_benchmark")
+
+    def _log(msg: str) -> None:
+        log_message(logger, msg)
 
     # Clamp similarity ranges to [0.0, 1.0] and ensure min <= max.
     args.equiv_sim_min = max(0.0, min(1.0, args.equiv_sim_min))
@@ -187,27 +194,27 @@ def main() -> None:
     ):
         args.include_ast_random = True
 
-    print("=" * 60)
-    print("Python Equivalence Benchmark Generator")
-    print("=" * 60)
-    print(f"  seed            : {args.seed}")
-    print(f"  min-ptests      : {args.min_ptests}")
-    print(f"  min-loc         : {args.min_loc}")
-    print(f"  output dir      : {args.output}")
-    print(f"  include-catalog : {args.include_catalog}")
-    print(f"  include-random  : {args.include_random}")
-    print(f"  include-ast     : {args.include_ast_random}")
-    print(
+    _log("=" * 60)
+    _log("Python Equivalence Benchmark Generator")
+    _log("=" * 60)
+    _log(f"  seed            : {args.seed}")
+    _log(f"  min-ptests      : {args.min_ptests}")
+    _log(f"  min-loc         : {args.min_loc}")
+    _log(f"  output dir      : {args.output}")
+    _log(f"  include-catalog : {args.include_catalog}")
+    _log(f"  include-random  : {args.include_random}")
+    _log(f"  include-ast     : {args.include_ast_random}")
+    _log(
         f"  equiv sim range : [{args.equiv_sim_min}, {args.equiv_sim_max}]"
     )
-    print(
+    _log(
         f"  non-eq sim range: [{args.non_equiv_sim_min}, {args.non_equiv_sim_max}]"
     )
     if use_num_examples:
-        print(f"  num-examples    : {args.num_examples}")
+        _log(f"  num-examples    : {args.num_examples}")
     if args.categories:
-        print(f"  categories      : {', '.join(args.categories)}")
-    print()
+        _log(f"  categories      : {', '.join(args.categories)}")
+    _log("")
 
     gen = BenchmarkGenerator(
         seed=args.seed,
@@ -217,6 +224,7 @@ def main() -> None:
         equiv_sim_range=(args.equiv_sim_min, args.equiv_sim_max),
         non_equiv_sim_range=(args.non_equiv_sim_min, args.non_equiv_sim_max),
         verbose=not args.quiet,
+        log_fn=_log,
     )
 
     entries = []
@@ -225,8 +233,12 @@ def main() -> None:
 
     # --- Catalog-based entries ---
     if args.include_catalog:
-        print("Generating entries from built-in catalog…")
-        entries.extend(gen.generate_from_catalog(categories=args.categories))
+        _log("Generating entries from built-in catalog…")
+        with tqdm(desc="Catalog seeds", unit="seed") as pbar:
+            entries.extend(gen.generate_from_catalog(
+                categories=args.categories,
+                progress_bar=pbar,
+            ))
         if target_n is not None and len(entries) >= target_n:
             entries = entries[:target_n]
 
@@ -236,8 +248,12 @@ def main() -> None:
         if target_n is not None:
             # Request enough templates to fill remaining quota
             count = max(count, target_n - len(entries))
-        print(f"\nGenerating {count} random template functions…")
-        new_entries = gen.generate_from_templates(n=count)
+        _log(f"\nGenerating {count} random template functions…")
+        with tqdm(desc="Template seeds", unit="seed") as pbar:
+            new_entries = gen.generate_from_templates(
+                n=count,
+                progress_bar=pbar,
+            )
         entries.extend(new_entries)
         if target_n is not None and len(entries) >= target_n:
             entries = entries[:target_n]
@@ -258,14 +274,16 @@ def main() -> None:
         else:
             ast_count = args.ast_random_count
 
-        print(
+        _log(
             f"\nGenerating {ast_count} AST-random functions "
             f"(min {args.min_loc} LOC)…"
         )
-        new_entries = gen.generate_from_random_ast(
-            n=ast_count,
-            min_loc=args.min_loc,
-        )
+        with tqdm(desc="AST-random seeds", unit="seed") as pbar:
+            new_entries = gen.generate_from_random_ast(
+                n=ast_count,
+                min_loc=args.min_loc,
+                progress_bar=pbar,
+            )
         entries.extend(new_entries)
         if target_n is not None and len(entries) >= target_n:
             entries = entries[:target_n]
@@ -274,10 +292,10 @@ def main() -> None:
     before = len(entries)
     entries = deduplicate_entries(entries)
     if before != len(entries):
-        print(f"\nDeduplicated: {before} → {len(entries)} entries")
+        _log(f"\nDeduplicated: {before} → {len(entries)} entries")
 
     # --- Save ---
-    print("\nSaving benchmark…")
+    _log("\nSaving benchmark…")
     path = gen.save(entries, args.output)
 
     # --- Final summary ---
@@ -285,15 +303,15 @@ def main() -> None:
     positive = [e for e in valid if e.is_equivalent]
     negative = [e for e in valid if not e.is_equivalent]
 
-    print()
-    print("=" * 60)
-    print("Done!")
-    print(f"  Total valid entries : {len(valid)}")
-    print(f"  Positive pairs      : {len(positive)}")
-    print(f"  Negative pairs      : {len(negative)}")
-    print(f"  JSON output         : {path}")
-    print(f"  Summary             : {os.path.join(args.output, 'summary.txt')}")
-    print("=" * 60)
+    _log("")
+    _log("=" * 60)
+    _log("Done!")
+    _log(f"  Total valid entries : {len(valid)}")
+    _log(f"  Positive pairs      : {len(positive)}")
+    _log(f"  Negative pairs      : {len(negative)}")
+    _log(f"  JSON output         : {path}")
+    _log(f"  Summary             : {os.path.join(args.output, 'summary.txt')}")
+    _log("=" * 60)
 
 
 if __name__ == "__main__":

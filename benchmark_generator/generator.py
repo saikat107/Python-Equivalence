@@ -21,7 +21,7 @@ import os
 import re
 import time
 import uuid
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 from .ast_similarity import ast_similarity
 from .catalog import CATALOG
@@ -106,6 +106,7 @@ class BenchmarkGenerator:
         equiv_sim_range: tuple[float, float] = (0.1, 0.5),
         non_equiv_sim_range: tuple[float, float] = (0.7, 0.95),
         verbose: bool = True,
+        log_fn: Optional[Callable[[str], None]] = None,
     ) -> None:
         self._seed = seed
         self._min_ptests = min_ptests
@@ -114,6 +115,7 @@ class BenchmarkGenerator:
         self._equiv_sim_range = equiv_sim_range
         self._non_equiv_sim_range = non_equiv_sim_range
         self._verbose = verbose
+        self._log_fn = log_fn or print
 
     # ------------------------------------------------------------------
     # Public API
@@ -122,13 +124,15 @@ class BenchmarkGenerator:
     def generate_from_catalog(
         self,
         categories: Optional[Sequence[str]] = None,
+        progress_bar: Optional[Any] = None,
     ) -> list[BenchmarkEntry]:
         """
         Build benchmark entries from the built-in function catalog.
 
         Parameters
         ----------
-        categories : if given, only include seeds in these categories
+        categories   : if given, only include seeds in these categories
+        progress_bar : optional tqdm instance to update after each seed
         """
         seeds = CATALOG
         if categories:
@@ -148,18 +152,29 @@ class BenchmarkGenerator:
                 filtered.append(s)
             seeds = filtered
 
+        if progress_bar is not None:
+            progress_bar.total = len(seeds)
+            progress_bar.refresh()
+
         entries: list[BenchmarkEntry] = []
         for seed_spec in seeds:
             entries.extend(self._entries_from_spec(seed_spec, provenance="catalog"))
+            if progress_bar is not None:
+                progress_bar.update(1)
         return entries
 
-    def generate_from_templates(self, n: int = 20) -> list[BenchmarkEntry]:
+    def generate_from_templates(
+        self,
+        n: int = 20,
+        progress_bar: Optional[Any] = None,
+    ) -> list[BenchmarkEntry]:
         """
         Build benchmark entries from randomly generated template functions.
 
         Parameters
         ----------
-        n : number of random seed functions to generate
+        n            : number of random seed functions to generate
+        progress_bar : optional tqdm instance to update after each seed
         """
         gen = RandomProgramGenerator(seed=self._seed)
         specs = gen.generate(n=n)
@@ -177,15 +192,22 @@ class BenchmarkGenerator:
                 filtered.append(s)
             specs = filtered
 
+        if progress_bar is not None:
+            progress_bar.total = len(specs)
+            progress_bar.refresh()
+
         entries: list[BenchmarkEntry] = []
         for spec in specs:
             entries.extend(self._entries_from_spec(spec, provenance="template"))
+            if progress_bar is not None:
+                progress_bar.update(1)
         return entries
 
     def generate_from_random_ast(
         self,
         n: int = 10,
         min_loc: int = 20,
+        progress_bar: Optional[Any] = None,
     ) -> list[BenchmarkEntry]:
         """
         Build benchmark entries from AST-based random function generation.
@@ -197,16 +219,24 @@ class BenchmarkGenerator:
 
         Parameters
         ----------
-        n       : number of random seed functions to generate
-        min_loc : minimum lines of code per function (default 20)
+        n            : number of random seed functions to generate
+        min_loc      : minimum lines of code per function (default 20)
+        progress_bar : optional tqdm instance to update after each seed
         """
         # Use the higher of the per-call min_loc and the global min_loc
         effective_min_loc = max(min_loc, self._min_loc)
         gen = RandomFunctionGenerator(seed=self._seed, min_loc=effective_min_loc)
         specs = gen.generate(n=n)
+
+        if progress_bar is not None:
+            progress_bar.total = len(specs)
+            progress_bar.refresh()
+
         entries: list[BenchmarkEntry] = []
         for spec in specs:
             entries.extend(self._entries_from_spec(spec, provenance="random_ast"))
+            if progress_bar is not None:
+                progress_bar.update(1)
         return entries
 
     def save(
@@ -276,7 +306,7 @@ class BenchmarkGenerator:
 
     def _log(self, msg: str) -> None:
         if self._verbose:
-            print(msg)
+            self._log_fn(msg)
 
     def _entries_from_spec(
         self,

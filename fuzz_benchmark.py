@@ -51,8 +51,12 @@ import threading
 import time
 from typing import Any, Optional
 
+from tqdm import tqdm
+
 # Make sure the package is importable when run from the repo root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from benchmark_generator.progress import setup_file_logger, log_message
 
 
 # ---------------------------------------------------------------------------
@@ -618,11 +622,15 @@ def _fuzz_entry_worker(args: tuple) -> dict:
 
 def main() -> None:
     args = _parse_args()
+    logger = setup_file_logger("fuzz_benchmark")
+
+    def _log(msg: str) -> None:
+        log_message(logger, msg)
 
     # Load the benchmark JSON
     benchmark_path = args.benchmark
     if not os.path.exists(benchmark_path):
-        print(f"Error: benchmark file not found: {benchmark_path}", file=sys.stderr)
+        _log(f"Error: benchmark file not found: {benchmark_path}")
         sys.exit(1)
 
     with open(benchmark_path, encoding="utf-8") as fh:
@@ -633,18 +641,18 @@ def main() -> None:
 
     num_workers = args.workers or multiprocessing.cpu_count()
 
-    print("=" * 60)
-    print("Python Equivalence Benchmark Fuzzer")
-    print("=" * 60)
-    print(f"  Benchmark file   : {benchmark_path}")
-    print(f"  Total entries    : {len(entries)}")
-    print(f"  Max tests/entry  : {args.max_tests}")
-    print(f"  Max time/entry   : {args.max_time}s")
-    print(f"  Workers          : {num_workers}")
-    print(f"  Per-call timeout : {args.per_call_timeout}s")
+    _log("=" * 60)
+    _log("Python Equivalence Benchmark Fuzzer")
+    _log("=" * 60)
+    _log(f"  Benchmark file   : {benchmark_path}")
+    _log(f"  Total entries    : {len(entries)}")
+    _log(f"  Max tests/entry  : {args.max_tests}")
+    _log(f"  Max time/entry   : {args.max_time}s")
+    _log(f"  Workers          : {num_workers}")
+    _log(f"  Per-call timeout : {args.per_call_timeout}s")
     if args.seed is not None:
-        print(f"  Random seed      : {args.seed}")
-    print()
+        _log(f"  Random seed      : {args.seed}")
+    _log("")
 
     # Prepare work items
     work_items = []
@@ -654,7 +662,7 @@ def main() -> None:
         if tests_file:
             tests_path = os.path.join(benchmark_dir, tests_file)
             if not os.path.exists(tests_path):
-                print(f"  Warning: test file not found: {tests_path}")
+                _log(f"  Warning: test file not found: {tests_path}")
                 continue
             with open(tests_path, encoding="utf-8") as fh:
                 tests_data = json.load(fh)
@@ -677,15 +685,22 @@ def main() -> None:
         ))
 
     # Run fuzzing in parallel
-    print(f"Fuzzing {len(work_items)} entries with {num_workers} workers…\n")
+    _log(f"Fuzzing {len(work_items)} entries with {num_workers} workers…\n")
     start_time = time.monotonic()
 
     if num_workers == 1:
         # Single-process mode for easier debugging
-        results = [_fuzz_entry_worker(item) for item in work_items]
+        results = []
+        for item in tqdm(work_items, desc="Fuzzing", unit="entry"):
+            results.append(_fuzz_entry_worker(item))
     else:
         with multiprocessing.Pool(processes=num_workers) as pool:
-            results = pool.map(_fuzz_entry_worker, work_items)
+            results = list(tqdm(
+                pool.imap(_fuzz_entry_worker, work_items),
+                total=len(work_items),
+                desc="Fuzzing",
+                unit="entry",
+            ))
 
     total_time = time.monotonic() - start_time
 
@@ -712,7 +727,7 @@ def main() -> None:
             label = "EQ" if result["is_equivalent"] else "NE"
             status = result["status"].upper()
             new_tests = result.get("new_tests_generated", 0)
-            print(
+            _log(
                 f"  [{i + 1:>4}/{len(results)}] {result['func_name']:<30} "
                 f"[{label}] {status:>13}  "
                 f"new_tests: {new_tests:>3}  "
@@ -724,31 +739,31 @@ def main() -> None:
 
     # Summary
     total = len(results)
-    print()
-    print("=" * 60)
-    print("Fuzz Evaluation Summary")
-    print("=" * 60)
-    print(f"  Total evaluated     : {total}")
-    print(f"  Passed              : {passed}")
-    print(f"  Failed              : {failed}")
-    print(f"  No new tests        : {no_new_tests}")
-    print(f"  Compile errors      : {errors}")
-    print(f"  Total new tests     : {total_new_tests}")
-    print(f"  Total fuzz time     : {total_time:.1f}s")
+    _log("")
+    _log("=" * 60)
+    _log("Fuzz Evaluation Summary")
+    _log("=" * 60)
+    _log(f"  Total evaluated     : {total}")
+    _log(f"  Passed              : {passed}")
+    _log(f"  Failed              : {failed}")
+    _log(f"  No new tests        : {no_new_tests}")
+    _log(f"  Compile errors      : {errors}")
+    _log(f"  Total new tests     : {total_new_tests}")
+    _log(f"  Total fuzz time     : {total_time:.1f}s")
     if total > 0:
-        print(f"  Pass rate           : {passed / total * 100:.1f}%")
+        _log(f"  Pass rate           : {passed / total * 100:.1f}%")
 
     # Breakdown by pair type
     eq_results = [r for r in results if r["is_equivalent"]]
     ne_results = [r for r in results if not r["is_equivalent"]]
     if eq_results:
         eq_pass = sum(1 for r in eq_results if r["status"] == "pass")
-        print(f"\n  Equivalent pairs    : {eq_pass}/{len(eq_results)} passed")
+        _log(f"\n  Equivalent pairs    : {eq_pass}/{len(eq_results)} passed")
     if ne_results:
         ne_pass = sum(1 for r in ne_results if r["status"] == "pass")
-        print(f"  Non-equivalent pairs: {ne_pass}/{len(ne_results)} passed")
+        _log(f"  Non-equivalent pairs: {ne_pass}/{len(ne_results)} passed")
 
-    print("=" * 60)
+    _log("=" * 60)
 
     # Optionally write JSON output
     if args.output:
@@ -772,7 +787,7 @@ def main() -> None:
         os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
         with open(args.output, "w", encoding="utf-8") as fh:
             json.dump(output_payload, fh, indent=2, ensure_ascii=False)
-        print(f"\nResults written to: {args.output}")
+        _log(f"\nResults written to: {args.output}")
 
 
 if __name__ == "__main__":
