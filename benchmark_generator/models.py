@@ -44,12 +44,12 @@ class BenchmarkEntry:
         """
         An entry is valid when:
           * positive pair  → at least 1 000 distinct ptests
-          * negative pair  → at least 1 ntest
+          * negative pair  → at least 1 distinct ntest
         """
         if self.is_equivalent:
-            return len(self.ptests) >= 1000
+            return len({repr(t) for t in self.ptests}) >= 1000
         else:
-            return len(self.ntests) >= 1
+            return len({repr(t) for t in self.ntests}) >= 1
 
     # ------------------------------------------------------------------
     # Serialisation

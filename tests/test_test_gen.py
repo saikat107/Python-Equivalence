@@ -61,3 +61,13 @@ class TestInputGenerator:
             assert isinstance(a, int)
             assert isinstance(b, int)
             assert isinstance(c, int)
+
+    def test_generated_inputs_are_distinct(self):
+        """Every generated input tuple must be unique."""
+        for param_types in [["int"], ["str"], ["list[int]"], ["int", "int"], ["list[int]", "int"]]:
+            gen = InputGenerator(param_types, seed=42)
+            inputs = gen.generate(n=500)
+            reprs = [repr(t) for t in inputs]
+            assert len(reprs) == len(set(reprs)), (
+                f"Duplicate inputs found for param_types={param_types}"
+            )

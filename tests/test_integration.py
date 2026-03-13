@@ -102,6 +102,24 @@ class TestBenchmarkGeneratorIntegration:
             assert "provenance" in e.metadata
             assert e.metadata["provenance"] == "catalog"
 
+    def test_ptests_are_distinct(self, small_benchmark):
+        """Every ptest in each entry must be unique."""
+        entries, _ = small_benchmark
+        for e in entries:
+            reprs = [repr(t) for t in e.ptests]
+            assert len(reprs) == len(set(reprs)), (
+                f"Duplicate ptests in entry {e.entry_id} ({e.func_name})"
+            )
+
+    def test_ntests_are_distinct(self, small_benchmark):
+        """Every ntest in each entry must be unique."""
+        entries, _ = small_benchmark
+        for e in entries:
+            reprs = [repr(t) for t in e.ntests]
+            assert len(reprs) == len(set(reprs)), (
+                f"Duplicate ntests in entry {e.entry_id} ({e.func_name})"
+            )
+
     def test_random_template_entries(self, tmp_path):
         """Template-generated entries should also pass validity."""
         gen = BenchmarkGenerator(
