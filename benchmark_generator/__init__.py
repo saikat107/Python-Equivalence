@@ -7,5 +7,6 @@ Usage (from repo root):
 
 from .models import BenchmarkEntry
 from .generator import BenchmarkGenerator
+from .random_func_gen import RandomFunctionGenerator
 
-__all__ = ["BenchmarkEntry", "BenchmarkGenerator"]
+__all__ = ["BenchmarkEntry", "BenchmarkGenerator", "RandomFunctionGenerator"]
