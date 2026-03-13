@@ -23,6 +23,7 @@ import time
 import uuid
 from typing import Any, Optional, Sequence
 
+from .ast_similarity import ast_similarity
 from .catalog import CATALOG
 from .models import BenchmarkEntry
 from .program_gen import RandomProgramGenerator
@@ -87,11 +88,13 @@ class BenchmarkGenerator:
 
     Parameters
     ----------
-    seed          : random seed for the input generator and program generator
-    min_ptests    : minimum number of distinct ptests required for positive pairs
-    runner_timeout: wall-clock timeout (seconds) per function batch execution
-    min_loc       : minimum lines of code for all generated functions (0 = no filter)
-    verbose       : if True print progress to stdout
+    seed              : random seed for the input generator and program generator
+    min_ptests        : minimum number of distinct ptests required for positive pairs
+    runner_timeout    : wall-clock timeout (seconds) per function batch execution
+    min_loc           : minimum lines of code for all generated functions (0 = no filter)
+    equiv_sim_range   : (min, max) AST similarity for equivalent pairs (default (0.1, 0.5))
+    non_equiv_sim_range : (min, max) AST similarity for non-equivalent pairs (default (0.7, 0.95))
+    verbose           : if True print progress to stdout
     """
 
     def __init__(
@@ -100,12 +103,16 @@ class BenchmarkGenerator:
         min_ptests: int = 1000,
         runner_timeout: float = 60.0,
         min_loc: int = 0,
+        equiv_sim_range: tuple[float, float] = (0.1, 0.5),
+        non_equiv_sim_range: tuple[float, float] = (0.7, 0.95),
         verbose: bool = True,
     ) -> None:
         self._seed = seed
         self._min_ptests = min_ptests
         self._runner = SafeRunner(timeout=runner_timeout)
         self._min_loc = min_loc
+        self._equiv_sim_range = equiv_sim_range
+        self._non_equiv_sim_range = non_equiv_sim_range
         self._verbose = verbose
 
     # ------------------------------------------------------------------
@@ -376,6 +383,19 @@ class BenchmarkGenerator:
             )
             return None
 
+        # --- AST similarity filter ---
+        sim = ast_similarity(p1_source, p2_source)
+        if is_equivalent:
+            lo, hi = self._equiv_sim_range
+        else:
+            lo, hi = self._non_equiv_sim_range
+        if not (lo <= sim <= hi):
+            self._log(
+                f"    ✗ Skipping pair: AST similarity {sim:.3f} "
+                f"outside [{lo}, {hi}]"
+            )
+            return None
+
         # Generate inputs.  When a domain constraint filter is provided we
         # generate extra candidates so that, after filtering, we still have a
         # sufficient pool.
@@ -425,7 +445,7 @@ class BenchmarkGenerator:
             ptests=ptests,
             ntests=ntests,
             is_equivalent=is_equivalent,
-            metadata=metadata,
+            metadata={**metadata, "ast_similarity": round(sim, 4)},
         )
 
         if entry.is_valid:

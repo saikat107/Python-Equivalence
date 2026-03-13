@@ -134,6 +134,34 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Suppress progress output",
     )
+    parser.add_argument(
+        "--equiv-sim-min",
+        type=float,
+        default=0.1,
+        metavar="F",
+        help="Minimum AST similarity for equivalent pairs (default: 0.1)",
+    )
+    parser.add_argument(
+        "--equiv-sim-max",
+        type=float,
+        default=0.5,
+        metavar="F",
+        help="Maximum AST similarity for equivalent pairs (default: 0.5)",
+    )
+    parser.add_argument(
+        "--non-equiv-sim-min",
+        type=float,
+        default=0.7,
+        metavar="F",
+        help="Minimum AST similarity for non-equivalent pairs (default: 0.7)",
+    )
+    parser.add_argument(
+        "--non-equiv-sim-max",
+        type=float,
+        default=0.95,
+        metavar="F",
+        help="Maximum AST similarity for non-equivalent pairs (default: 0.95)",
+    )
     return parser.parse_args()
 
 
@@ -158,6 +186,12 @@ def main() -> None:
     print(f"  include-catalog : {args.include_catalog}")
     print(f"  include-random  : {args.include_random}")
     print(f"  include-ast     : {args.include_ast_random}")
+    print(
+        f"  equiv sim range : [{args.equiv_sim_min}, {args.equiv_sim_max}]"
+    )
+    print(
+        f"  non-eq sim range: [{args.non_equiv_sim_min}, {args.non_equiv_sim_max}]"
+    )
     if use_num_examples:
         print(f"  num-examples    : {args.num_examples}")
     if args.categories:
@@ -169,6 +203,8 @@ def main() -> None:
         min_ptests=args.min_ptests,
         runner_timeout=args.runner_timeout,
         min_loc=args.min_loc,
+        equiv_sim_range=(args.equiv_sim_min, args.equiv_sim_max),
+        non_equiv_sim_range=(args.non_equiv_sim_min, args.non_equiv_sim_max),
         verbose=not args.quiet,
     )
 
