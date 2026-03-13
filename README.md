@@ -25,42 +25,121 @@ Ground truth comes from *construction provenance*, not test results:
 ## Quick Start
 
 ```bash
-# Default: all catalog categories + save to benchmark_output/
-python generate_benchmark.py
+# Generate 1000 benchmark entries using AST-random generation (default)
+python generate_benchmark.py --num-examples 1000
 
-# Also include randomly generated template functions
+# All catalog categories + save to benchmark_output/
+python generate_benchmark.py --include-catalog
+
+# Include randomly generated template functions
 python generate_benchmark.py --include-random --random-count 20
 
-# Only specific categories
-python generate_benchmark.py --categories aggregation filtering searching
+# Include AST-based random functions
+python generate_benchmark.py --include-ast-random --ast-random-count 50
+
+# Combine multiple sources
+python generate_benchmark.py --include-catalog --include-random --include-ast-random
+
+# Only specific categories from catalog
+python generate_benchmark.py --include-catalog --categories aggregation filtering searching
 
 # Custom settings
-python generate_benchmark.py --seed 123 --min-ptests 500 --output my_bench/
+python generate_benchmark.py --seed 123 --min-ptests 500 --min-loc 30 --output my_bench/
 ```
 
 Output (in `benchmark_output/` by default):
-- `benchmark_<timestamp>.json` — all benchmark entries
+- `benchmark_<timestamp>.json` — all benchmark entries (test data stored separately)
+- `tests/<entry_id>_tests.json` — individual test data files (ptests / ntests)
 - `summary.txt` — human-readable statistics
+
+---
+
+## Evaluating a Benchmark
+
+Use the independent evaluation script to verify a generated benchmark:
+
+```bash
+# Evaluate all entries in a benchmark
+python evaluate_benchmark.py benchmark_output/benchmark_20260101_120000.json
+
+# Verbose mode — print per-entry results
+python evaluate_benchmark.py benchmark_output/benchmark_*.json --verbose
+
+# Custom per-call timeout
+python evaluate_benchmark.py benchmark_output/benchmark_*.json --per-call-timeout 10
+```
+
+The evaluator loads each entry, compiles both `p1` and `p2` via `exec`, runs them
+on the stored ptests and ntests, and reports accuracy statistics:
+
+```
+============================================================
+Evaluation Summary
+============================================================
+  Total evaluated : 100
+  Passed          : 98
+  Failed          : 2
+  Compile errors  : 0
+  Pass rate       : 98.0%
+
+  Equivalent pairs   : 50/50 passed
+  Non-equivalent pairs: 48/50 passed
+============================================================
+```
+
+---
+
+## CLI Reference
+
+### `generate_benchmark.py`
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--output DIR` | `benchmark_output/` | Directory to write benchmark files |
+| `--seed N` | `42` | Random seed for reproducibility |
+| `--min-ptests N` | `10000` | Minimum distinct ptests for positive pairs |
+| `--runner-timeout SECS` | `60` | Subprocess-level batch timeout (seconds) |
+| `--per-call-timeout SECS` | `5` | Per-individual function call timeout (seconds) |
+| `--min-loc N` | `50` | Minimum lines of code per function (all sources) |
+| `--num-examples N` | — | Target total entries; defaults to AST-random generation |
+| `--include-catalog` | off | Generate from the built-in catalog |
+| `--include-random` | off | Generate from random templates |
+| `--random-count N` | `20` | Number of random template seeds |
+| `--include-ast-random` | off | Generate from AST-based blueprints |
+| `--ast-random-count N` | `10` | Number of AST-random seeds |
+| `--categories CAT ...` | all | Restrict catalog to listed categories |
+| `--quiet` | off | Suppress progress output |
+
+### `evaluate_benchmark.py`
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `BENCHMARK_JSON` | (required) | Path to the benchmark JSON file |
+| `--verbose` | off | Print per-entry evaluation details |
+| `--per-call-timeout SECS` | `5` | Timeout per individual function call |
 
 ---
 
 ## Repository Structure
 
 ```
-generate_benchmark.py          # Entry-point script
+generate_benchmark.py          # Entry-point: generate a benchmark
+evaluate_benchmark.py          # Entry-point: evaluate a benchmark
 benchmark_generator/
     __init__.py
     models.py                  # BenchmarkEntry dataclass
-    catalog.py                 # 18 seed functions with equivalents & mutations
+    catalog.py                 # 18+ seed functions with equivalents & mutations
     program_gen.py             # Template-based random program generator
+    random_func_gen.py         # AST-based random function generator (20 blueprints)
     test_gen.py                # Type-directed test input generator
-    runner.py                  # Safe function execution (subprocess + timeout)
-    generator.py               # Orchestration
+    runner.py                  # Safe function execution (subprocess + per-call timeout)
+    generator.py               # Orchestration (min-loc filtering, num-examples support)
 tests/
     test_models.py
     test_catalog.py
     test_test_gen.py
     test_program_gen.py
+    test_random_func_gen.py
     test_runner.py
     test_integration.py
 ```
@@ -86,7 +165,7 @@ Each seed function has **2 equivalent variants** and **2 semantic mutations**, p
 
 ### Randomly generated functions (templates)
 
-Five template families generate additional functions:
+Ten template families generate additional functions:
 
 | Template         | Description |
 |-----------------|-------------|
@@ -95,8 +174,46 @@ Five template families generate additional functions:
 | `sum_threshold`    | Sum elements satisfying `x OP threshold` |
 | `map_scale`        | Multiply every element by a constant |
 | `find_first`       | Index of first element satisfying `x OP threshold` |
+| `sliding_window_sum` | Sum of sliding windows |
+| `partition_count`  | Count elements in partitions |
+| `weighted_sum`     | Weighted sum of elements |
+| `multi_pass_transform` | Multi-pass list transformations |
 
 Each template is instantiated with random operators (`>`, `<`, `>=`, `<=`) and thresholds.
+
+### AST-based random functions (blueprints)
+
+Twenty blueprint patterns generate complex functions with diverse control flow:
+
+| Blueprint | Description |
+|-----------|-------------|
+| `aggregate_filter` | Sum/count/max of elements matching a comparison |
+| `list_transform` | Transform list elements with conditional logic |
+| `nested_pair_find` | Find pairs in nested loops |
+| `string_count` | Count characters matching conditions |
+| `polynomial_eval` | Evaluate polynomials |
+| `classify` | Multi-branch classification |
+| `state_machine` | State-machine processing |
+| `two_pointer` | Two-pointer algorithms |
+| `sliding_window` | Sliding window computations |
+| `multi_condition_acc` | Accumulate with multiple conditions |
+| `conditional_list_build` | Build lists with conditionals |
+| `index_processing` | Index-based list processing |
+| `early_termination` | Early exit algorithms |
+| `prefix_sum` | Prefix sum computations |
+| `histogram` | Histogram building |
+| `running_extrema` | Running min/max tracking |
+| `list_partition` | List partitioning |
+
+Each blueprint ensures ≥ 20 LOC with loops, conditionals, and multiple intermediate variables.
+
+### Minimum lines of code (`--min-loc`)
+
+The `--min-loc` flag applies to **all generation sources**:
+
+- **Catalog**: seeds whose source is below the minimum LOC are skipped.
+- **Templates**: generated functions below the minimum LOC are skipped.
+- **AST-random**: functions are padded to meet the minimum LOC (using the internal padding mechanism).
 
 ### Input generation
 
@@ -120,6 +237,13 @@ Mutations include:
 - Skipping edge elements (first/last)
 - Wrong base case in recursive-style functions
 
+### Runner timeout
+
+The runner enforces timeouts at **two levels**:
+
+1. **Batch-level** (`--runner-timeout`): The entire subprocess running a batch of inputs is killed if it exceeds the wall-clock limit.
+2. **Per-call** (`--per-call-timeout`): Each individual function call inside the worker is guarded by a thread-based timeout, preventing a single input from consuming the entire batch budget.
+
 ---
 
 ## Running Tests
@@ -133,7 +257,7 @@ python -m pytest tests/ -v
 
 ## Output Format
 
-Each entry in the JSON file has the following structure:
+Each entry in the main JSON file has the following structure:
 
 ```json
 {
@@ -143,12 +267,11 @@ Each entry in the JSON file has the following structure:
   "return_type": "int",
   "p1_source": "def sum_list(xs: list) -> int:\n    ...",
   "p2_source": "def sum_list(xs: list) -> int:\n    return sum(xs)",
-  "ptests": [[1, 2, 3], [], [-1, 0, 1], ...],
-  "ntests": [],
   "is_equivalent": true,
   "num_ptests": 1500,
   "num_ntests": 0,
   "is_valid": true,
+  "tests_file": "tests/uuid_tests.json",
   "metadata": {
     "category": "aggregation",
     "provenance": "catalog",
@@ -159,4 +282,14 @@ Each entry in the JSON file has the following structure:
 }
 ```
 
-The `metadata.provenance` field is `"catalog"` for built-in seeds and `"template"` for randomly generated functions. Template entries also include `template_id` and `template_params`.
+Test data (ptests / ntests) is stored in separate files under `tests/` to keep the main JSON manageable. Each test file contains:
+
+```json
+{
+  "entry_id": "uuid",
+  "ptests": [[1, 2, 3], [], [-1, 0, 1]],
+  "ntests": []
+}
+```
+
+The `metadata.provenance` field is `"catalog"` for built-in seeds, `"template"` for randomly generated functions, and `"random_ast"` for AST-based random functions.
