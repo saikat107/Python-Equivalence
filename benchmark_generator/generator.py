@@ -49,10 +49,10 @@ def _deduplicate(items: list[Any]) -> list[Any]:
 
 
 def _normalize_source(source: str, func_name: str) -> str:
-    """Normalise *source* by replacing *func_name* with a fixed placeholder.
+    """Normalize *source* by replacing *func_name* with a fixed placeholder.
 
     This allows two implementations that are identical except for the
-    function name to be recognised as duplicates.
+    function name to be recognized as duplicates.
     """
     return re.sub(r"\b" + re.escape(func_name) + r"\b", "_F_", source.strip())
 
