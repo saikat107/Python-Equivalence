@@ -61,3 +61,80 @@ class TestInputGenerator:
             assert isinstance(a, int)
             assert isinstance(b, int)
             assert isinstance(c, int)
+
+    # ----------------------------------------------------------------
+    # Additional tests for uncovered branches
+    # ----------------------------------------------------------------
+
+    def test_bool_param(self):
+        """Cover _bool_values and bool branch in _random_value."""
+        gen = InputGenerator(["bool"], seed=0)
+        inputs = gen.generate(n=50)
+        assert len(inputs) >= 2  # At least True and False
+        values = {inp[0] for inp in inputs}
+        assert True in values
+        assert False in values
+        for (v,) in inputs:
+            assert isinstance(v, bool)
+
+    def test_bool_with_int(self):
+        """Bool combined with int param."""
+        gen = InputGenerator(["bool", "int"], seed=0)
+        inputs = gen.generate(n=100)
+        assert len(inputs) > 10
+        for b, i in inputs:
+            assert isinstance(b, bool)
+            assert isinstance(i, int)
+
+    def test_list_str_param(self):
+        """Cover _list_str_values and list[str] branches in _values_for/_random_value."""
+        gen = InputGenerator(["list[str]"], seed=0)
+        inputs = gen.generate(n=200)
+        assert len(inputs) > 10
+        for (lst,) in inputs:
+            assert isinstance(lst, list)
+            for item in lst:
+                assert isinstance(item, str)
+
+    def test_list_str_includes_empty_list(self):
+        """list[str] values should include an empty list."""
+        gen = InputGenerator(["list[str]"], seed=0)
+        inputs = gen.generate(n=200)
+        has_empty = any(lst == [] for (lst,) in inputs)
+        assert has_empty
+
+    def test_list_str_two_params(self):
+        gen = InputGenerator(["list[str]", "int"], seed=0)
+        inputs = gen.generate(n=200)
+        assert len(inputs) > 10
+        for lst, v in inputs:
+            assert isinstance(lst, list)
+            assert isinstance(v, int)
+
+    def test_unknown_type_falls_back_to_int(self):
+        """An unrecognized type string should fall back to generating ints."""
+        gen = InputGenerator(["float"], seed=0)
+        inputs = gen.generate(n=100)
+        assert len(inputs) > 0
+        for (v,) in inputs:
+            assert isinstance(v, int)  # fallback generates ints
+
+    def test_list_type_alias(self):
+        """'list' (without qualifier) should behave like 'list[int]'."""
+        gen = InputGenerator(["list"], seed=0)
+        inputs = gen.generate(n=200)
+        assert len(inputs) > 10
+        for (lst,) in inputs:
+            assert isinstance(lst, list)
+            for item in lst:
+                assert isinstance(item, int)
+
+    def test_large_n_for_int_covers_random_range(self):
+        """When n is large enough, _int_values should use rng.randint fallback."""
+        gen = InputGenerator(["int"], seed=42)
+        inputs = gen.generate(n=2000)
+        # Should have many distinct values including some large ones
+        values = {inp[0] for inp in inputs}
+        assert len(values) > 100
+        # Some values should be outside the [-30, 30] edge-case range
+        assert any(abs(v) > 30 for v in values)

@@ -89,3 +89,49 @@ class TestRandomProgramGenerator:
                         )
                     except Exception:
                         pass
+
+    # ----------------------------------------------------------------
+    # Additional tests for uncovered branches
+    # ----------------------------------------------------------------
+
+    def test_different_seeds_produce_different_names(self):
+        gen1 = RandomProgramGenerator(seed=1)
+        gen2 = RandomProgramGenerator(seed=99)
+        s1 = gen1.generate(n=5)
+        s2 = gen2.generate(n=5)
+        names1 = {s["name"] for s in s1}
+        names2 = {s["name"] for s in s2}
+        assert names1 != names2
+
+    def test_has_at_least_one_mutation(self):
+        gen = RandomProgramGenerator(seed=10)
+        specs = gen.generate(n=10)
+        for spec in specs:
+            assert len(spec["mutations"]) >= 1
+
+    def test_mutations_have_description(self):
+        gen = RandomProgramGenerator(seed=3)
+        specs = gen.generate(n=5)
+        for spec in specs:
+            for mut in spec["mutations"]:
+                assert "source" in mut
+                assert "description" in mut
+                assert len(mut["description"]) > 0
+
+    def test_category_field_present_and_nonempty(self):
+        gen = RandomProgramGenerator(seed=7)
+        specs = gen.generate(n=5)
+        for spec in specs:
+            assert "category" in spec
+            assert len(spec["category"]) > 0
+
+    def test_has_template_id(self):
+        gen = RandomProgramGenerator(seed=0)
+        specs = gen.generate(n=5)
+        for spec in specs:
+            assert "template_id" in spec
+
+    def test_generate_zero(self):
+        gen = RandomProgramGenerator(seed=0)
+        specs = gen.generate(n=0)
+        assert specs == []
