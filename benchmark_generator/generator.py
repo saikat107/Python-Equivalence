@@ -460,7 +460,7 @@ class BenchmarkGenerator:
                 if is_equivalent
                 else f"need ≥1 ntest, got {len(ntests)}"
             )
-            self._log(f"    ✗ {label} pair skipped — {reason} AST sim {sim:.3f}")
+            self._log(f"    ✗ {label} pair skipped — {reason}, AST sim {sim:.3f}")
 
         return entry if entry.is_valid else None
 
