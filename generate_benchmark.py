@@ -137,36 +137,47 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--equiv-sim-min",
         type=float,
-        default=0.1,
+        default=0,
         metavar="F",
-        help="Minimum AST similarity for equivalent pairs (default: 0.1)",
+        help="Minimum AST similarity for equivalent pairs (default: 0)",
     )
     parser.add_argument(
         "--equiv-sim-max",
         type=float,
-        default=0.5,
+        default=1.0,
         metavar="F",
-        help="Maximum AST similarity for equivalent pairs (default: 0.5)",
+        help="Maximum AST similarity for equivalent pairs (default: 1.0)",
     )
     parser.add_argument(
         "--non-equiv-sim-min",
         type=float,
-        default=0.7,
+        default=0,
         metavar="F",
-        help="Minimum AST similarity for non-equivalent pairs (default: 0.7)",
+        help="Minimum AST similarity for non-equivalent pairs (default: 0)",
     )
     parser.add_argument(
         "--non-equiv-sim-max",
         type=float,
-        default=0.95,
+        default=1.0,
         metavar="F",
-        help="Maximum AST similarity for non-equivalent pairs (default: 0.95)",
+        help="Maximum AST similarity for non-equivalent pairs (default: 1.0)",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
+
+    # Clamp similarity ranges to [0.0, 1.0] and ensure min <= max.
+    args.equiv_sim_min = max(0.0, min(1.0, args.equiv_sim_min))
+    args.equiv_sim_max = max(0.0, min(1.0, args.equiv_sim_max))
+    if args.equiv_sim_max < args.equiv_sim_min:
+        args.equiv_sim_max = args.equiv_sim_min
+
+    args.non_equiv_sim_min = max(0.0, min(1.0, args.non_equiv_sim_min))
+    args.non_equiv_sim_max = max(0.0, min(1.0, args.non_equiv_sim_max))
+    if args.non_equiv_sim_max < args.non_equiv_sim_min:
+        args.non_equiv_sim_max = args.non_equiv_sim_min
 
     # If --num-examples is set and no explicit source is enabled, default to
     # AST-random generation.

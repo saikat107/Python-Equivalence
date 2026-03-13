@@ -18,7 +18,11 @@ def _ast_to_sequence(node: ast.AST) -> List[str]:
     result: List[str] = []
 
     def _dfs(n: ast.AST) -> None:
-        result.append(type(n).__name__)
+        name = [str(type(n).__name__)]
+        name_attr = getattr(n, "name", None)
+        if isinstance(name_attr, str) and name_attr:
+            name.append(f"({name_attr})")
+        result.append(":->:".join(name))
         for child in ast.iter_child_nodes(n):
             _dfs(child)
 
