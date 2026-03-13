@@ -29,7 +29,7 @@ def _ast_to_sequence(node: ast.AST) -> List[str]:
 def _edit_distance(seq1: List[str], seq2: List[str]) -> int:
     """Levenshtein edit distance between two sequences (two-row DP)."""
     m, n = len(seq1), len(seq2)
-    # Optimise so that n <= m (iterate over the shorter dimension).
+    # Optimize so that n <= m (iterate over the shorter dimension).
     if m < n:
         seq1, seq2 = seq2, seq1
         m, n = n, m
