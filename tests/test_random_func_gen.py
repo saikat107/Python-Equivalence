@@ -103,9 +103,13 @@ class TestRandomFunctionGenerator:
         """Quick smoke check: original and equivalents agree on sample inputs."""
         gen = RandomFunctionGenerator(seed=5)
         specs = gen.generate(n=5)
+        test_inputs = [
+            ([1, 2, 3],), ([0],), ([-1, 1],), ([],),
+            ([5, -5, 10, -10],), ([1],), ([-3, -2, -1, 0, 1, 2, 3],),
+            ([100, -100],), ([0, 0, 0],), ([1, 2, 3, 4, 5, 6, 7, 8],),
+        ]
         for spec in specs:
             fname = spec["name"]
-            test_inputs = [([1, 2, 3],), ([0],), ([-1, 1],), ([],)]
             for inp in test_inputs:
                 ns = {}
                 exec(compile(spec["source"], "<test>", "exec"), ns)  # noqa: S102
