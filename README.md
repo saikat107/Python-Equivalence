@@ -13,7 +13,7 @@ This project generates a benchmark dataset of the form **(p1, p2, ptests, ntests
 | `ptests` | List of input tuples where `p1(*t) == p2(*t)` |
 | `ntests` | List of input tuples where `p1(*t) != p2(*t)` |
 
-**Positive pairs** (semantically equivalent) have ≥ 1 000 distinct ptests and 0 ntests.  
+**Positive pairs** (semantically equivalent) have ≥ 1 000 distinct ptests and 0 ntests.
 **Negative pairs** (semantically non-equivalent) have ≥ 1 ntest.
 
 Ground truth comes from *construction provenance*, not test results:
@@ -89,6 +89,46 @@ Evaluation Summary
 
 ---
 
+## Fuzz-Testing a Benchmark
+
+Use `fuzz_benchmark.py` to generate additional test inputs via type-aware mutation-based fuzzing and evaluate benchmark entries against them:
+
+```bash
+# Fuzz all entries in a benchmark
+python src/fuzz_benchmark.py benchmark_output/benchmark_20260101_120000.json
+
+# Custom limits
+python src/fuzz_benchmark.py benchmark_output/benchmark_*.json --max-tests 20 --max-time 3600 --workers 4
+```
+
+The fuzzer loads existing ptests/ntests as seeds, applies type-aware mutations (for `int`, `str`, `bool`, `list[int]`, `list[str]`), discards duplicates and crash-inducing inputs, and evaluates both `p1` and `p2` on the newly generated tests. Multiple entries are fuzzed in parallel using `multiprocessing.Pool`.
+
+---
+
+## Fuzzer — Standalone Function Fuzzing & Equivalence Checking
+
+The `src/fuzzer/` package provides two standalone scripts for randomly testing arbitrary Python functions:
+
+### Fuzz a Single Function
+
+```bash
+python src/fuzzer/fuzz_function.py <file.py> <function_name> [--num-inputs N] [--seed S] [--timeout SECS]
+```
+
+### Check Equivalence of Two Functions
+
+```bash
+# Both functions in the same file
+python src/fuzzer/equivalence_checker.py <file.py> <func1> <func2> [options]
+
+# Functions in different files
+python src/fuzzer/equivalence_checker.py <file1.py> <func1> <func2> --file2 <file2.py>
+```
+
+Both scripts parse type annotations directly from function signatures via the Python AST and support arbitrarily nested types (e.g. `dict[str, list[tuple[str, str, bool]]]`). See [`src/fuzzer/README.md`](src/fuzzer/README.md) for full usage details.
+
+---
+
 ## CLI Reference
 
 ### `src/generate_benchmark.py`
@@ -118,6 +158,15 @@ Evaluation Summary
 | `--verbose` | off | Print per-entry evaluation details |
 | `--per-call-timeout SECS` | `5` | Timeout per individual function call |
 
+### `src/fuzz_benchmark.py`
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `BENCHMARK_JSON` | (required) | Path to the benchmark JSON file |
+| `--max-tests N` | `20` | Max new tests per entry |
+| `--max-time SECS` | `3600` | Max fuzzing time per entry |
+| `--workers N` | CPU count | Number of parallel workers |
+
 ---
 
 ## Repository Structure
@@ -126,15 +175,26 @@ Evaluation Summary
 src/
     generate_benchmark.py          # Entry-point: generate a benchmark
     evaluate_benchmark.py          # Entry-point: evaluate a benchmark
+    fuzz_benchmark.py              # Entry-point: fuzz-test a benchmark
     equivalence_benchmarks/
         __init__.py
         models.py                  # BenchmarkEntry dataclass
-        catalog.py                 # 18+ seed functions with equivalents & mutations
+        catalog.py                 # 26 seed functions with equivalents & mutations
         program_gen.py             # Template-based random program generator
         random_func_gen.py         # AST-based random function generator (20 blueprints)
         test_gen.py                # Type-directed test input generator
         runner.py                  # Safe function execution (subprocess + per-call timeout)
         generator.py               # Orchestration (min-loc filtering, num-examples support)
+        ast_similarity.py          # AST-based code similarity measurement
+        progress.py                # Logging and progress-bar helpers
+    fuzzer/
+        __init__.py
+        type_parser.py             # AST-based type annotation parser
+        value_generator.py         # Recursive random value generator
+        fuzz_function.py           # Fuzz a single function with random inputs
+        equivalence_checker.py     # Differential fuzzing equivalence checker
+data/
+    benchmark_v1.json              # Pre-generated benchmark dataset
 tests/
     test_models.py
     test_catalog.py
@@ -143,70 +203,98 @@ tests/
     test_random_func_gen.py
     test_runner.py
     test_integration.py
+    test_ast_similarity.py
+    test_deduplicate.py
+    test_fuzz_benchmark.py
+    test_fuzzer.py
+conftest.py                        # Adds src/ to sys.path for test discovery
+requirements.txt                   # Python dependencies (tqdm)
 ```
+
+---
+
+## Pipeline Architecture
+
+The generation pipeline, orchestrated by `generator.py`, proceeds as follows for each seed function:
+
+1. **Seed Instantiation** — A seed function is drawn from the catalog, generated from a parameterized template, or synthesized from an AST blueprint.
+2. **Pair Construction** — Positive pairs are formed by pairing the seed with each of its equivalents; negative pairs by pairing it with each of its mutations.
+3. **Input Generation** — A type-directed input generator (`test_gen.py`) produces ≥ 1 500 diverse inputs covering edge cases and random values.
+4. **Execution** — Both functions in a pair are executed on all inputs inside a sandboxed subprocess with per-call and batch-level timeouts (`runner.py`).
+5. **Partitioning** — Inputs are classified into *ptests* (both functions agree) and *ntests* (they disagree). Inputs causing runtime errors are discarded.
+6. **Validation** — Positive pairs require ≥ 1 000 distinct ptests and 0 ntests. Negative pairs require ≥ 1 ntest.
+7. **Serialization** — Valid entries are saved as JSON with test data in separate files.
 
 ---
 
 ## Benchmark Design
 
+### Generation strategies
+
+The benchmark generator uses three complementary strategies, each contributing seed functions along with their equivalents and mutations:
+
+| Strategy | Module | Description |
+|----------|--------|-------------|
+| **Hand-Curated Catalog** | `catalog.py` | 26 carefully designed seed functions spanning 8 categories, each with 2 equivalents and 2 mutations. |
+| **Template-Based Generation** | `program_gen.py` | 9 parameterized template families instantiated with random operators and constants, each producing 2 equivalents and 2 mutations. |
+| **AST-Based Blueprint Generation** | `random_func_gen.py` | 20 blueprint patterns generating complex functions (≥ 20 LOC) with diverse control flow, each with 2 equivalents and 2 mutations. |
+
 ### Seed categories (catalog)
 
-| Category       | Functions |
-|----------------|-----------|
-| aggregation    | `sum_list`, `count_positives`, `sum_squares` |
-| extrema        | `max_list`, `min_list` |
-| filtering      | `filter_evens`, `filter_positives` |
-| searching      | `linear_search`, `count_occurrences` |
-| transformation | `reverse_list`, `remove_duplicates`, `flatten_lists` |
-| mathematical   | `factorial`, `clamp` |
-| predicate      | `is_sorted` |
-| string         | `is_palindrome`, `count_vowels`, `reverse_string` |
+| Category | Seed Functions |
+|----------|---------------|
+| **Aggregation** | `sum_list`, `count_positives`, `sum_squares`, `compute_histogram`, `cumulative_max` |
+| **Extrema** | `max_list`, `min_list` |
+| **Filtering** | `filter_evens`, `filter_positives` |
+| **Searching** | `linear_search`, `count_occurrences`, `bubble_sort`, `two_sum_count` |
+| **Transformation** | `reverse_list`, `remove_duplicates`, `flatten_lists`, `longest_plateau`, `insertion_sort` |
+| **Mathematical** | `factorial`, `clamp`, `evaluate_polynomial` |
+| **Predicate** | `is_sorted`, `is_palindrome` |
+| **String** | `count_vowels`, `reverse_string`, `run_length_encode` |
 
-Each seed function has **2 equivalent variants** and **2 semantic mutations**, producing 4 benchmark entries per seed.
+Each catalog entry provides a canonical implementation, two equivalent implementations using different coding styles, and two semantic mutations.
 
-### Randomly generated functions (templates)
+### Template-based random functions
 
-Ten template families generate additional functions:
+Nine parameterized template families generate additional functions:
 
-| Template         | Description |
-|-----------------|-------------|
-| `filter_threshold` | Keep elements satisfying `x OP threshold` |
-| `count_threshold`  | Count elements satisfying `x OP threshold` |
-| `sum_threshold`    | Sum elements satisfying `x OP threshold` |
-| `map_scale`        | Multiply every element by a constant |
-| `find_first`       | Index of first element satisfying `x OP threshold` |
-| `sliding_window_sum` | Sum of sliding windows |
-| `partition_count`  | Count elements in partitions |
-| `weighted_sum`     | Weighted sum of elements |
-| `multi_pass_transform` | Multi-pass list transformations |
+| Template | Parameters | Equivalents | Mutation Types |
+|----------|-----------|-------------|----------------|
+| `filter_threshold` | op ∈ {`>`,`<`,`>=`,`<=`}, threshold ∈ [-3, 5] | List comprehension, `filter()` with lambda | Operator flip, threshold off-by-one |
+| `count_threshold` | op, threshold | Generator expression, `len()` of comprehension | Operator flip, condition removal |
+| `sum_threshold` | op, threshold | Generator sum, two-pass filter-then-sum | Operator flip, condition removal |
+| `map_scale` | scale ∈ {2, 3, 4, 5, 10} | List comprehension, `map()` with lambda | Wrong scale (+1), wrong operator (+ instead of ×) |
+| `find_first` | op, threshold | While-loop, comprehension with indexing | Off-by-one index, operator flip |
+| `sliding_window_sum` | window_size ∈ {2, 3, 4, 5} | Nested-loop recompute, slice-based | Wrong initial window size, off-by-one in subtraction |
+| `partition_count` | lo ∈ [-3, 2], hi ∈ [3, 7] | Alternative counting, derived middle count | Boundary inclusion change, swapped result indices |
+| `weighted_sum` | threshold ∈ [1, 5], weights ∈ [2, 3, 4] | Alternative accumulation, split-then-combine | Wrong positive weight, wrong negative weight |
+| `multi_pass_transform` | op, threshold, scale | Single-pass variant, comprehension chain | Wrong scale, operator flip in filter |
 
-Each template is instantiated with random operators (`>`, `<`, `>=`, `<=`) and thresholds.
+Each template instantiation produces a unique function name (e.g., `filter_threshold_gt_3`) and is validated syntactically before inclusion.
 
 ### AST-based random functions (blueprints)
 
-Twenty blueprint patterns generate complex functions with diverse control flow:
+Twenty blueprint patterns generate complex functions with ≥ 20 LOC, diverse control flow (nested loops, multi-branch conditionals, state tracking), and multiple intermediate variables:
 
-| Blueprint | Description |
-|-----------|-------------|
-| `aggregate_filter` | Sum/count/max of elements matching a comparison |
-| `list_transform` | Transform list elements with conditional logic |
-| `nested_pair_find` | Find pairs in nested loops |
-| `string_count` | Count characters matching conditions |
-| `polynomial_eval` | Evaluate polynomials |
-| `classify` | Multi-branch classification |
-| `state_machine` | State-machine processing |
-| `two_pointer` | Two-pointer algorithms |
-| `sliding_window` | Sliding window computations |
-| `multi_condition_acc` | Accumulate with multiple conditions |
-| `conditional_list_build` | Build lists with conditionals |
-| `index_processing` | Index-based list processing |
-| `early_termination` | Early exit algorithms |
-| `prefix_sum` | Prefix sum computations |
-| `histogram` | Histogram building |
-| `running_extrema` | Running min/max tracking |
-| `list_partition` | List partitioning |
-
-Each blueprint ensures ≥ 20 LOC with loops, conditionals, and multiple intermediate variables.
+| Blueprint | Algorithmic Pattern | Mutation Types |
+|-----------|-------------------|----------------|
+| `aggregate_filter` | Sum/count/max with filtering | Comparison flip, wrong initial accumulator |
+| `list_transform` | Map + filter with conditional logic | Wrong arithmetic operator, wrong filter condition |
+| `nested_pair_find` | O(n²) pair search | Comparison flip, self-pair inclusion |
+| `string_count` | Character classification by `ord()` ranges | Boundary off-by-one, wrong category combination |
+| `polynomial_eval` | Iterative polynomial evaluation | Wrong initial value, operator change (× → +) |
+| `classify` | Three-way partitioning | Boundary shift (`<` to `>=`, `<=` to `<`) |
+| `state_machine` | Increasing/decreasing run tracking | Comparison change (`>` to `>=`), wrong initial count |
+| `two_pointer` | Sorted array pair finding | Loop condition change, equality relaxation |
+| `sliding_window` | Maximum window sum | Off-by-one removal index, wrong initial sum |
+| `multi_condition_acc` | Multi-threshold weighted accumulation | Wrong weight, boundary shift |
+| `conditional_list_build` | Conditional element transformation | Wrong multiplier, boundary shift |
+| `index_processing` | Even/odd index separation | Wrong operator in computation, swapped parity |
+| `early_termination` | First-match search with break | Opposite comparison, off-by-one index |
+| `prefix_sum` | Cumulative sum array | Wrong accumulation, off-by-one boundary |
+| `histogram` | Frequency counting in buckets | Wrong bucket boundaries, off-by-one classification |
+| `running_extrema` | Running min/max tracking | Wrong initial value, wrong comparison |
+| `list_partition` | Predicate-based partitioning | Wrong condition, wrong grouping |
 
 ### Minimum lines of code (`--min-loc`)
 
@@ -226,19 +314,78 @@ The type-directed generator covers:
 
 For functions with domain preconditions (`non-empty list`, `lo ≤ hi`, `n ≥ 0`), the generator applies an `input_filter` and oversamples to ensure ≥ 1 000 valid inputs survive filtering.
 
-### Semantic mutations (negative pairs)
+---
 
-Mutations include:
-- Off-by-one comparisons (`>` → `>=`, `<` → `<=`)
-- Off-by-one constants (`n+1` → `n`)
-- Wrong initial accumulator value
-- Wrong boundary inclusion
-- Sorting when order should be preserved
-- Returning the wrong aggregate (sum vs. count, min vs. max)
-- Skipping edge elements (first/last)
-- Wrong base case in recursive-style functions
+## Mutation Taxonomy
 
-### Runner timeout
+Negative pairs are produced by applying *semantic mutations* — small, targeted changes that introduce a behavioral difference detectable by at least one input. Mutations fall into seven categories:
+
+### Comparison operator mutations
+
+Replace a comparison operator with a related but semantically different one (e.g. `>` → `>=`, `<` → `<=`, `==` → `!=`). Changing `>` to `>=` includes the boundary value, altering which elements satisfy the condition. This is the most frequently used mutation class.
+
+| Example | Original | Mutated | Effect |
+|---------|----------|---------|--------|
+| `count_positives` | `x > 0` | `x >= 0` | Zero counted as positive |
+| `state_machine` | `val > prev` | `val >= prev` | Equal consecutive elements treated as increasing |
+
+### Off-by-one constant mutations
+
+Shift a numeric constant by ±1 or use an adjacent value. These change thresholds, window sizes, or indices.
+
+| Example | Original | Mutated | Effect |
+|---------|----------|---------|--------|
+| `find_first` | `return i` | `return i+1` | Index off by one |
+| `sliding_window` | `xs[i - k]` | `xs[i - k + 1]` | Window slides to wrong position |
+
+### Wrong initial value mutations
+
+Change the initial value of an accumulator, counter, or extremum tracker. For example, `max_value = 0` instead of `max_value = xs[0]` fails when all elements are negative.
+
+| Example | Original | Mutated | Effect |
+|---------|----------|---------|--------|
+| `max_list` | `m = xs[0]` | `m = 0` | Fails for all-negative lists |
+| `aggregate_filter` | `acc = 0` | `acc = 1` | Result always off by 1 |
+
+### Wrong arithmetic operator mutations
+
+Replace an arithmetic operator with a different one (e.g. `*` → `+`, `+` → `-`).
+
+| Example | Original | Mutated | Effect |
+|---------|----------|---------|--------|
+| `map_scale` | `x * scale` | `x + scale` | Elements shifted instead of scaled |
+| `polynomial_eval` | `power *= x` | `power += x` | Exponential growth becomes linear |
+
+### Condition removal or replacement mutations
+
+Remove a conditional guard entirely or replace it with a different predicate.
+
+| Example | Original | Mutated | Effect |
+|---------|----------|---------|--------|
+| `count_threshold` | Count matching `x OP t` | `return len(xs)` | Ignores condition |
+| `filter_evens` | Keep `x % 2 == 0` | Keep `x % 2 != 0` | Returns odd instead of even |
+
+### Data structure and ordering mutations
+
+Alter the structure of the output — swap indices, reorder partitions, skip elements, or change iteration range.
+
+| Example | Original | Mutated | Effect |
+|---------|----------|---------|--------|
+| `partition_count` | `[low, mid, high]` | `[low, high, mid]` | Partitions swapped |
+| `sum_list` | Iterates over `xs` | Iterates over `xs[:-1]` | Last element skipped |
+
+### Wrong aggregate mutations
+
+Compute a different aggregate function over the same data (e.g. `min` instead of `max`, `sum` instead of `count`).
+
+| Example | Original | Mutated | Effect |
+|---------|----------|---------|--------|
+| `max_list` | Find maximum | Find minimum | Returns smallest instead of largest |
+| `weighted_sum` | Weight `pos_w` | Weight `pos_w + 1` | Positive weight is wrong |
+
+---
+
+## Runner Timeout
 
 The runner enforces timeouts at **two levels**:
 
@@ -294,3 +441,9 @@ Test data (ptests / ntests) is stored in separate files under `tests/` to keep t
 ```
 
 The `metadata.provenance` field is `"catalog"` for built-in seeds, `"template"` for randomly generated functions, and `"random_ast"` for AST-based random functions.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
