@@ -195,17 +195,27 @@ class InputFuzzer:
             t = type_str.strip()
             if t == "int":
                 mutated.append(self._mutate_int(value))
+            elif t == "float":
+                mutated.append(self._mutate_float(value))
             elif t == "bool":
                 mutated.append(self._mutate_bool(value))
             elif t == "str":
                 mutated.append(self._mutate_str(value))
             elif t in ("list[int]", "list"):
                 mutated.append(self._mutate_list_int(value))
+            elif t == "list[float]":
+                mutated.append(self._mutate_list_float(value))
             elif t == "list[str]":
                 mutated.append(self._mutate_list_str(value))
+            elif t == "set[int]":
+                mutated.append(self._mutate_set_int(value))
+            elif t == "dict[str,int]":
+                mutated.append(self._mutate_dict_str_int(value))
+            elif t.startswith("tuple["):
+                mutated.append(self._mutate_tuple_int(value))
             else:
-                # Fallback: treat as int
-                mutated.append(self._mutate_int(value))
+                # Fallback: dispatch based on the runtime type of the value
+                mutated.append(self._mutate_by_value(value))
         return tuple(mutated)
 
     def random_input(self) -> tuple:
@@ -243,6 +253,40 @@ class InputFuzzer:
         else:
             # Completely random
             return self._rng.randint(-500, 500)
+
+    # ------------------------------------------------------------------
+    # Float mutations
+    # ------------------------------------------------------------------
+
+    def _mutate_float(self, value: float) -> float:
+        if not isinstance(value, (int, float)):
+            return self._rng.uniform(-10.0, 10.0)
+        value = float(value)
+        strategy = self._rng.randint(0, 7)
+        if strategy == 0:
+            # Add small delta
+            return value + self._rng.uniform(-10.0, 10.0)
+        elif strategy == 1:
+            # Negate
+            return -value
+        elif strategy == 2:
+            # Boundary values
+            return self._rng.choice([0.0, 1.0, -1.0, 0.5, -0.5, 10.0, -10.0, 100.0, -100.0])
+        elif strategy == 3:
+            # Large random
+            return self._rng.uniform(-1000.0, 1000.0)
+        elif strategy == 4:
+            # Multiply by small factor
+            return value * self._rng.choice([2.0, 0.5, -1.0, -0.5, 0.0, 1.5])
+        elif strategy == 5:
+            # Round to integer
+            return float(round(value))
+        elif strategy == 6:
+            # Small perturbation
+            return value + self._rng.choice([-0.01, 0.01, -0.1, 0.1, -1.0, 1.0])
+        else:
+            # Completely random
+            return self._rng.uniform(-500.0, 500.0)
 
     # ------------------------------------------------------------------
     # Bool mutations
@@ -352,6 +396,56 @@ class InputFuzzer:
         return result
 
     # ------------------------------------------------------------------
+    # List[float] mutations
+    # ------------------------------------------------------------------
+
+    def _mutate_list_float(self, value: list) -> list:
+        if not isinstance(value, list):
+            value = list(value)
+        result = [float(v) if isinstance(v, (int, float)) else v for v in value]
+
+        strategy = self._rng.randint(0, 8)
+        if strategy == 0:
+            # Insert a random element
+            pos = self._rng.randint(0, len(result))
+            result.insert(pos, self._rng.uniform(-10.0, 10.0))
+        elif strategy == 1:
+            # Delete a random element
+            if result:
+                pos = self._rng.randint(0, len(result) - 1)
+                result.pop(pos)
+        elif strategy == 2:
+            # Modify a random element
+            if result:
+                pos = self._rng.randint(0, len(result) - 1)
+                result[pos] = self._mutate_float(result[pos])
+        elif strategy == 3:
+            # Reverse
+            result.reverse()
+        elif strategy == 4:
+            # Sort
+            result.sort()
+        elif strategy == 5:
+            # Duplicate an element
+            if result:
+                pos = self._rng.randint(0, len(result) - 1)
+                result.insert(pos, result[pos])
+        elif strategy == 6:
+            # Swap two elements
+            if len(result) >= 2:
+                i = self._rng.randint(0, len(result) - 1)
+                j = self._rng.randint(0, len(result) - 1)
+                result[i], result[j] = result[j], result[i]
+        elif strategy == 7:
+            # Replace with random list of similar size
+            length = max(0, len(result) + self._rng.randint(-2, 2))
+            result = [self._rng.uniform(-10.0, 10.0) for _ in range(length)]
+        else:
+            # Append boundary value
+            result.append(self._rng.choice([0.0, 1.0, -1.0, 10.0, -10.0]))
+        return result
+
+    # ------------------------------------------------------------------
     # List[str] mutations
     # ------------------------------------------------------------------
 
@@ -390,8 +484,108 @@ class InputFuzzer:
             # Replace with random list
             length = max(0, len(result) + self._rng.randint(-1, 2))
             chars = list(string.ascii_lowercase[:8])
-            result = [self._rng.choice(chars) for _ in range(length)]
         return result
+
+    # ------------------------------------------------------------------
+    # Set[int] mutations
+    # ------------------------------------------------------------------
+
+    def _mutate_set_int(self, value) -> set:
+        if isinstance(value, set):
+            lst = list(value)
+        elif isinstance(value, (list, tuple)):
+            lst = list(value)
+        else:
+            lst = []
+        # Mutate as a list[int] then convert back to set
+        mutated_list = self._mutate_list_int(lst)
+        return set(mutated_list)
+
+    # ------------------------------------------------------------------
+    # Dict[str, int] mutations
+    # ------------------------------------------------------------------
+
+    def _mutate_dict_str_int(self, value) -> dict:
+        if not isinstance(value, dict):
+            value = {}
+        result = dict(value)
+
+        strategy = self._rng.randint(0, 4)
+        if strategy == 0:
+            # Add a new key-value pair
+            key_len = self._rng.randint(1, 4)
+            key = "".join(self._rng.choice(string.ascii_lowercase) for _ in range(key_len))
+            result[key] = self._rng.randint(-10, 10)
+        elif strategy == 1:
+            # Remove a random key
+            if result:
+                key = self._rng.choice(list(result.keys()))
+                del result[key]
+        elif strategy == 2:
+            # Modify a random value
+            if result:
+                key = self._rng.choice(list(result.keys()))
+                result[key] = self._mutate_int(result[key])
+        elif strategy == 3:
+            # Modify a random key
+            if result:
+                old_key = self._rng.choice(list(result.keys()))
+                val = result.pop(old_key)
+                new_key = self._mutate_str(old_key)
+                result[new_key] = val
+        else:
+            # Replace with random dict
+            length = self._rng.randint(0, 5)
+            result = {}
+            for _ in range(length):
+                key_len = self._rng.randint(1, 3)
+                key = "".join(self._rng.choice(string.ascii_lowercase) for _ in range(key_len))
+                result[key] = self._rng.randint(-10, 10)
+        return result
+
+    # ------------------------------------------------------------------
+    # Tuple[int, ...] mutations
+    # ------------------------------------------------------------------
+
+    def _mutate_tuple_int(self, value) -> tuple:
+        if isinstance(value, tuple):
+            lst = list(value)
+        elif isinstance(value, list):
+            lst = list(value)
+        else:
+            lst = []
+        mutated_list = self._mutate_list_int(lst)
+        return tuple(mutated_list)
+
+    # ------------------------------------------------------------------
+    # Fallback: mutate based on actual runtime type
+    # ------------------------------------------------------------------
+
+    def _mutate_by_value(self, value: Any) -> Any:
+        """Dispatch mutation based on the runtime type of *value*."""
+        if isinstance(value, bool):
+            return self._mutate_bool(value)
+        if isinstance(value, int):
+            return self._mutate_int(value)
+        if isinstance(value, float):
+            return self._mutate_float(value)
+        if isinstance(value, str):
+            return self._mutate_str(value)
+        if isinstance(value, dict):
+            return self._mutate_dict_str_int(value)
+        if isinstance(value, set):
+            return self._mutate_set_int(value)
+        if isinstance(value, tuple):
+            return self._mutate_tuple_int(value)
+        if isinstance(value, list):
+            # Try to infer element type from first element
+            if value and isinstance(value[0], str):
+                return self._mutate_list_str(value)
+            if value and isinstance(value[0], float):
+                return self._mutate_list_float(value)
+            return self._mutate_list_int(value)
+        # Absolute fallback: return value unchanged
+        return value
 
     # ------------------------------------------------------------------
     # Random value generation (for fully random inputs)
@@ -401,6 +595,8 @@ class InputFuzzer:
         t = type_str.strip()
         if t == "int":
             return self._rng.randint(-500, 500)
+        if t == "float":
+            return self._rng.uniform(-500.0, 500.0)
         if t == "bool":
             return self._rng.choice([True, False])
         if t == "str":
@@ -409,10 +605,27 @@ class InputFuzzer:
         if t in ("list[int]", "list"):
             length = self._rng.randint(0, 8)
             return [self._rng.randint(-10, 10) for _ in range(length)]
+        if t == "list[float]":
+            length = self._rng.randint(0, 8)
+            return [self._rng.uniform(-10.0, 10.0) for _ in range(length)]
         if t == "list[str]":
             length = self._rng.randint(0, 5)
             chars = list(string.ascii_lowercase[:8])
             return [self._rng.choice(chars) for _ in range(length)]
+        if t == "set[int]":
+            length = self._rng.randint(0, 8)
+            return {self._rng.randint(-10, 10) for _ in range(length)}
+        if t == "dict[str,int]":
+            length = self._rng.randint(0, 5)
+            result = {}
+            for _ in range(length):
+                key_len = self._rng.randint(1, 3)
+                key = "".join(self._rng.choice(string.ascii_lowercase) for _ in range(key_len))
+                result[key] = self._rng.randint(-10, 10)
+            return result
+        if t.startswith("tuple["):
+            length = self._rng.randint(0, 8)
+            return tuple(self._rng.randint(-10, 10) for _ in range(length))
         # Fallback
         return self._rng.randint(-10, 10)
 

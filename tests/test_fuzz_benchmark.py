@@ -140,6 +140,91 @@ class TestInputFuzzer(unittest.TestCase):
         result = fuzzer.mutate(([],))
         self.assertIsInstance(result[0], list)
 
+    def test_mutate_float_returns_float(self):
+        fuzzer = InputFuzzer(["float"], seed=42)
+        for _ in range(50):
+            result = fuzzer.mutate((3.14,))
+            self.assertIsInstance(result, tuple)
+            self.assertEqual(len(result), 1)
+            self.assertIsInstance(result[0], float)
+
+    def test_mutate_list_float_returns_list(self):
+        fuzzer = InputFuzzer(["list[float]"], seed=42)
+        for _ in range(50):
+            result = fuzzer.mutate(([1.0, 2.5, 3.7],))
+            self.assertIsInstance(result[0], list)
+            for v in result[0]:
+                self.assertIsInstance(v, (int, float))
+
+    def test_mutate_list_float_empty(self):
+        fuzzer = InputFuzzer(["list[float]"], seed=42)
+        result = fuzzer.mutate(([],))
+        self.assertIsInstance(result[0], list)
+
+    def test_mutate_set_int_returns_set(self):
+        fuzzer = InputFuzzer(["set[int]"], seed=42)
+        for _ in range(50):
+            result = fuzzer.mutate(({1, 2, 3},))
+            self.assertIsInstance(result[0], set)
+            for v in result[0]:
+                self.assertIsInstance(v, int)
+
+    def test_mutate_dict_str_int_returns_dict(self):
+        fuzzer = InputFuzzer(["dict[str,int]"], seed=42)
+        for _ in range(50):
+            result = fuzzer.mutate(({"a": 1, "b": 2},))
+            self.assertIsInstance(result[0], dict)
+
+    def test_mutate_tuple_int_returns_tuple(self):
+        fuzzer = InputFuzzer(["tuple[int,...]"], seed=42)
+        for _ in range(50):
+            result = fuzzer.mutate(((1, 2, 3),))
+            self.assertIsInstance(result[0], tuple)
+
+    def test_random_input_float(self):
+        fuzzer = InputFuzzer(["float"], seed=42)
+        result = fuzzer.random_input()
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], float)
+
+    def test_random_input_list_float(self):
+        fuzzer = InputFuzzer(["list[float]"], seed=42)
+        result = fuzzer.random_input()
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], list)
+
+    def test_random_input_set_int(self):
+        fuzzer = InputFuzzer(["set[int]"], seed=42)
+        result = fuzzer.random_input()
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], set)
+
+    def test_random_input_dict_str_int(self):
+        fuzzer = InputFuzzer(["dict[str,int]"], seed=42)
+        result = fuzzer.random_input()
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], dict)
+
+    def test_random_input_tuple_int(self):
+        fuzzer = InputFuzzer(["tuple[int,...]"], seed=42)
+        result = fuzzer.random_input()
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], tuple)
+
+    def test_mutate_list_and_float_params(self):
+        """Regression test for the original crash: list + float params."""
+        fuzzer = InputFuzzer(["list", "float"], seed=42)
+        for _ in range(100):
+            result = fuzzer.mutate(([1, 2, 3], 0.5))
+            self.assertIsInstance(result[0], list)
+            self.assertIsInstance(result[1], float)
+
+    def test_fallback_mutates_list_value(self):
+        """Unknown type with list value should not crash."""
+        fuzzer = InputFuzzer(["unknown_type"], seed=42)
+        result = fuzzer.mutate(([1, 2, 3],))
+        self.assertIsInstance(result[0], list)
+
 
 # ---------------------------------------------------------------------------
 # Compile / timeout helper tests
