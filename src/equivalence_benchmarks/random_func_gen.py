@@ -1631,6 +1631,525 @@ def _bp_list_partition(
 
 
 # ---------------------------------------------------------------------------
+# New complex blueprint builders
+# ---------------------------------------------------------------------------
+
+def _bp_dict_value_transform(
+    fname: str, rng: random.Random,
+) -> tuple[str, list[str], list[dict]]:
+    """Aggregate dictionary values with conditional weighting."""
+    weight_pos = rng.choice([2, 3, 5])
+    weight_neg = rng.choice([1, 2, 4])
+
+    source = (
+        f"def {fname}(d: dict) -> int:\n"
+        f"    keys = sorted(d.keys())\n"
+        f"    n = len(keys)\n"
+        f"    pos_sum = 0\n"
+        f"    neg_sum = 0\n"
+        f"    zero_count = 0\n"
+        f"    total = 0\n"
+        f"    for i in range(n):\n"
+        f"        k = keys[i]\n"
+        f"        val = d[k]\n"
+        f"        if val > 0:\n"
+        f"            pos_sum += val * {weight_pos}\n"
+        f"        elif val < 0:\n"
+        f"            neg_sum += abs(val) * {weight_neg}\n"
+        f"        else:\n"
+        f"            zero_count += 1\n"
+        f"        total += val\n"
+        f"    combined = pos_sum - neg_sum\n"
+        f"    adjusted = combined + zero_count\n"
+        f"    if adjusted < 0:\n"
+        f"        adjusted = -adjusted\n"
+        f"    result = adjusted\n"
+        f"    return result\n"
+    )
+
+    equiv1 = (
+        f"def {fname}(d: dict) -> int:\n"
+        f"    keys = sorted(d.keys())\n"
+        f"    n = len(keys)\n"
+        f"    pos_sum = 0\n"
+        f"    neg_sum = 0\n"
+        f"    zero_count = 0\n"
+        f"    total = 0\n"
+        f"    for k in keys:\n"
+        f"        val = d[k]\n"
+        f"        total = total + val\n"
+        f"        if val > 0:\n"
+        f"            pos_sum = pos_sum + val * {weight_pos}\n"
+        f"        elif val < 0:\n"
+        f"            neg_sum = neg_sum + abs(val) * {weight_neg}\n"
+        f"        else:\n"
+        f"            zero_count = zero_count + 1\n"
+        f"    combined = pos_sum - neg_sum\n"
+        f"    adjusted = combined + zero_count\n"
+        f"    if adjusted < 0:\n"
+        f"        adjusted = -adjusted\n"
+        f"    result = adjusted\n"
+        f"    return result\n"
+    )
+
+    equiv2 = (
+        f"def {fname}(d: dict) -> int:\n"
+        f"    keys = sorted(d.keys())\n"
+        f"    n = len(keys)\n"
+        f"    pos_sum = 0\n"
+        f"    neg_sum = 0\n"
+        f"    zero_count = 0\n"
+        f"    total = 0\n"
+        f"    idx = 0\n"
+        f"    while idx < n:\n"
+        f"        k = keys[idx]\n"
+        f"        val = d[k]\n"
+        f"        if val > 0:\n"
+        f"            pos_sum += val * {weight_pos}\n"
+        f"        elif val < 0:\n"
+        f"            neg_sum += abs(val) * {weight_neg}\n"
+        f"        else:\n"
+        f"            zero_count += 1\n"
+        f"        total += val\n"
+        f"        idx += 1\n"
+        f"    combined = pos_sum - neg_sum\n"
+        f"    adjusted = combined + zero_count\n"
+        f"    if adjusted < 0:\n"
+        f"        adjusted = -adjusted\n"
+        f"    result = adjusted\n"
+        f"    return result\n"
+    )
+
+    mut1 = {
+        "source": source.replace(
+            f"val * {weight_pos}", f"val * {weight_pos + 1}"
+        ),
+        "description":
+            f"changed positive weight from {weight_pos} to {weight_pos + 1}",
+    }
+    mut2 = {
+        "source": source.replace(
+            "pos_sum - neg_sum", "pos_sum + neg_sum"
+        ),
+        "description":
+            "changed subtraction to addition in final combination",
+    }
+
+    return source, [equiv1, equiv2], [mut1, mut2]
+
+
+def _bp_float_weighted_sum(
+    fname: str, rng: random.Random,
+) -> tuple[str, list[str], list[dict]]:
+    """Weighted sum of float list elements based on position and threshold."""
+    threshold = rng.choice([0.0, 1.0, -1.0, 0.5])
+    decay = rng.choice([0.9, 0.8, 0.95])
+
+    source = (
+        f"def {fname}(xs: list, threshold: float) -> float:\n"
+        f"    n = len(xs)\n"
+        f"    weighted = 0.0\n"
+        f"    factor = 1.0\n"
+        f"    decay = {decay}\n"
+        f"    above_count = 0\n"
+        f"    below_count = 0\n"
+        f"    for i in range(n):\n"
+        f"        val = xs[i]\n"
+        f"        if val > threshold:\n"
+        f"            weighted += val * factor\n"
+        f"            above_count += 1\n"
+        f"        else:\n"
+        f"            weighted -= val * factor\n"
+        f"            below_count += 1\n"
+        f"        factor = factor * decay\n"
+        f"    total_items = above_count + below_count\n"
+        f"    if total_items == 0:\n"
+        f"        return 0.0\n"
+        f"    result = round(weighted, 4)\n"
+        f"    return result\n"
+    )
+
+    equiv1 = (
+        f"def {fname}(xs: list, threshold: float) -> float:\n"
+        f"    n = len(xs)\n"
+        f"    weighted = 0.0\n"
+        f"    factor = 1.0\n"
+        f"    decay = {decay}\n"
+        f"    above_count = 0\n"
+        f"    below_count = 0\n"
+        f"    for val in xs:\n"
+        f"        if val > threshold:\n"
+        f"            contribution = val * factor\n"
+        f"            weighted = weighted + contribution\n"
+        f"            above_count += 1\n"
+        f"        else:\n"
+        f"            contribution = val * factor\n"
+        f"            weighted = weighted - contribution\n"
+        f"            below_count += 1\n"
+        f"        factor = factor * decay\n"
+        f"    total_items = above_count + below_count\n"
+        f"    if total_items == 0:\n"
+        f"        return 0.0\n"
+        f"    result = round(weighted, 4)\n"
+        f"    return result\n"
+    )
+
+    equiv2 = (
+        f"def {fname}(xs: list, threshold: float) -> float:\n"
+        f"    n = len(xs)\n"
+        f"    weighted = 0.0\n"
+        f"    factor = 1.0\n"
+        f"    decay = {decay}\n"
+        f"    above_count = 0\n"
+        f"    below_count = 0\n"
+        f"    idx = 0\n"
+        f"    while idx < n:\n"
+        f"        val = xs[idx]\n"
+        f"        if val > threshold:\n"
+        f"            weighted += val * factor\n"
+        f"            above_count += 1\n"
+        f"        else:\n"
+        f"            weighted -= val * factor\n"
+        f"            below_count += 1\n"
+        f"        factor *= decay\n"
+        f"        idx += 1\n"
+        f"    total_items = above_count + below_count\n"
+        f"    if total_items == 0:\n"
+        f"        return 0.0\n"
+        f"    result = round(weighted, 4)\n"
+        f"    return result\n"
+    )
+
+    mut1 = {
+        "source": source.replace(
+            f"factor * decay", f"factor * {round(decay - 0.1, 2)}"
+        ),
+        "description": f"changed decay from {decay} to {round(decay - 0.1, 2)}",
+    }
+    mut2 = {
+        "source": source.replace(
+            "weighted -= val * factor",
+            "weighted += val * factor",
+        ),
+        "description": "changed subtraction to addition for below-threshold",
+    }
+
+    return source, [equiv1, equiv2], [mut1, mut2]
+
+
+def _bp_set_symmetric_diff(
+    fname: str, rng: random.Random,
+) -> tuple[str, list[str], list[dict]]:
+    """Compute metrics from two lists using set operations."""
+    source = (
+        f"def {fname}(xs: list, ys: list) -> int:\n"
+        f"    set_x = set()\n"
+        f"    for val in xs:\n"
+        f"        set_x.add(val)\n"
+        f"    set_y = set()\n"
+        f"    for val in ys:\n"
+        f"        set_y.add(val)\n"
+        f"    both = set()\n"
+        f"    only_x = set()\n"
+        f"    only_y = set()\n"
+        f"    for v in set_x:\n"
+        f"        if v in set_y:\n"
+        f"            both.add(v)\n"
+        f"        else:\n"
+        f"            only_x.add(v)\n"
+        f"    for v in set_y:\n"
+        f"        if v not in set_x:\n"
+        f"            only_y.add(v)\n"
+        f"    sym_diff = len(only_x) + len(only_y)\n"
+        f"    intersection = len(both)\n"
+        f"    result = sym_diff * 2 + intersection\n"
+        f"    return result\n"
+    )
+
+    equiv1 = (
+        f"def {fname}(xs: list, ys: list) -> int:\n"
+        f"    set_x = set(xs)\n"
+        f"    set_y = set(ys)\n"
+        f"    both = set_x & set_y\n"
+        f"    only_x = set_x - set_y\n"
+        f"    only_y = set_y - set_x\n"
+        f"    sym_diff_count = len(only_x) + len(only_y)\n"
+        f"    intersection_count = len(both)\n"
+        f"    total_x = len(set_x)\n"
+        f"    total_y = len(set_y)\n"
+        f"    combined = total_x + total_y\n"
+        f"    check = sym_diff_count + intersection_count\n"
+        f"    result = sym_diff_count * 2 + intersection_count\n"
+        f"    return result\n"
+    )
+
+    equiv2 = (
+        f"def {fname}(xs: list, ys: list) -> int:\n"
+        f"    set_x = set()\n"
+        f"    idx = 0\n"
+        f"    while idx < len(xs):\n"
+        f"        set_x.add(xs[idx])\n"
+        f"        idx += 1\n"
+        f"    set_y = set()\n"
+        f"    idx = 0\n"
+        f"    while idx < len(ys):\n"
+        f"        set_y.add(ys[idx])\n"
+        f"        idx += 1\n"
+        f"    both_count = 0\n"
+        f"    only_x_count = 0\n"
+        f"    only_y_count = 0\n"
+        f"    for v in set_x:\n"
+        f"        if v in set_y:\n"
+        f"            both_count += 1\n"
+        f"        else:\n"
+        f"            only_x_count += 1\n"
+        f"    for v in set_y:\n"
+        f"        if v not in set_x:\n"
+        f"            only_y_count += 1\n"
+        f"    sym_diff = only_x_count + only_y_count\n"
+        f"    result = sym_diff * 2 + both_count\n"
+        f"    return result\n"
+    )
+
+    mut1 = {
+        "source": source.replace(
+            "sym_diff * 2 + intersection",
+            "sym_diff * 2 - intersection",
+        ),
+        "description": "changed '+' to '-' in final metric combination",
+    }
+    mut2 = {
+        "source": source.replace(
+            "v not in set_x", "v in set_x"
+        ),
+        "description":
+            "inverted 'not in' to 'in' — only_y incorrectly captures intersection",
+    }
+
+    return source, [equiv1, equiv2], [mut1, mut2]
+
+
+def _bp_nested_accumulate(
+    fname: str, rng: random.Random,
+) -> tuple[str, list[str], list[dict]]:
+    """Triple-nested accumulation pattern with complex control flow."""
+    op = rng.choice(["+", "-"])
+    inner_threshold = rng.choice([0, 5, -5, 10])
+
+    source = (
+        f"def {fname}(xs: list) -> int:\n"
+        f"    n = len(xs)\n"
+        f"    total = 0\n"
+        f"    pair_count = 0\n"
+        f"    skip_count = 0\n"
+        f"    for i in range(n):\n"
+        f"        row_sum = 0\n"
+        f"        row_pairs = 0\n"
+        f"        for j in range(i + 1, n):\n"
+        f"            diff = xs[i] {op} xs[j]\n"
+        f"            if diff > {inner_threshold}:\n"
+        f"                inner_acc = 0\n"
+        f"                for k in range(j + 1, min(j + 4, n)):\n"
+        f"                    inner_acc += xs[k]\n"
+        f"                row_sum += diff + inner_acc\n"
+        f"                row_pairs += 1\n"
+        f"            else:\n"
+        f"                skip_count += 1\n"
+        f"        pair_count += row_pairs\n"
+        f"        total += row_sum\n"
+        f"    adjusted = total\n"
+        f"    if pair_count == 0:\n"
+        f"        adjusted = 0\n"
+        f"    result = adjusted\n"
+        f"    return result\n"
+    )
+
+    equiv1 = (
+        f"def {fname}(xs: list) -> int:\n"
+        f"    n = len(xs)\n"
+        f"    total = 0\n"
+        f"    pair_count = 0\n"
+        f"    skip_count = 0\n"
+        f"    for i in range(n):\n"
+        f"        row_sum = 0\n"
+        f"        row_pairs = 0\n"
+        f"        j = i + 1\n"
+        f"        while j < n:\n"
+        f"            diff = xs[i] {op} xs[j]\n"
+        f"            if diff > {inner_threshold}:\n"
+        f"                inner_acc = 0\n"
+        f"                k = j + 1\n"
+        f"                bound = min(j + 4, n)\n"
+        f"                while k < bound:\n"
+        f"                    inner_acc = inner_acc + xs[k]\n"
+        f"                    k += 1\n"
+        f"                row_sum = row_sum + diff + inner_acc\n"
+        f"                row_pairs = row_pairs + 1\n"
+        f"            else:\n"
+        f"                skip_count += 1\n"
+        f"            j += 1\n"
+        f"        pair_count += row_pairs\n"
+        f"        total += row_sum\n"
+        f"    adjusted = total\n"
+        f"    if pair_count == 0:\n"
+        f"        adjusted = 0\n"
+        f"    result = adjusted\n"
+        f"    return result\n"
+    )
+
+    equiv2 = (
+        f"def {fname}(xs: list) -> int:\n"
+        f"    n = len(xs)\n"
+        f"    total = 0\n"
+        f"    pair_count = 0\n"
+        f"    skip_count = 0\n"
+        f"    i = 0\n"
+        f"    while i < n:\n"
+        f"        row_sum = 0\n"
+        f"        row_pairs = 0\n"
+        f"        for j in range(i + 1, n):\n"
+        f"            diff = xs[i] {op} xs[j]\n"
+        f"            if diff > {inner_threshold}:\n"
+        f"                inner_acc = sum(xs[k] for k in range(j + 1, min(j + 4, n)))\n"
+        f"                row_sum += diff + inner_acc\n"
+        f"                row_pairs += 1\n"
+        f"            else:\n"
+        f"                skip_count += 1\n"
+        f"        pair_count += row_pairs\n"
+        f"        total += row_sum\n"
+        f"        i += 1\n"
+        f"    adjusted = total\n"
+        f"    if pair_count == 0:\n"
+        f"        adjusted = 0\n"
+        f"    result = adjusted\n"
+        f"    return result\n"
+    )
+
+    flipped_op = _arith_flip(op)
+    mut1 = {
+        "source": source.replace(
+            f"xs[i] {op} xs[j]", f"xs[i] {flipped_op} xs[j]"
+        ),
+        "description": f"changed '{op}' to '{flipped_op}' in diff computation",
+    }
+    mut2 = {
+        "source": source.replace(
+            f"diff > {inner_threshold}",
+            f"diff > {inner_threshold + 5}",
+        ),
+        "description":
+            f"raised threshold from {inner_threshold} to {inner_threshold + 5}",
+    }
+
+    return source, [equiv1, equiv2], [mut1, mut2]
+
+
+def _bp_matrix_trace(
+    fname: str, rng: random.Random,
+) -> tuple[str, list[str], list[dict]]:
+    """Treat a flat list as a matrix and compute a trace-like diagonal sum."""
+    op = rng.choice(["+", "-", "*"])
+    offset = rng.choice([0, 1, -1])
+
+    source = (
+        f"def {fname}(xs: list, cols: int) -> int:\n"
+        f"    n = len(xs)\n"
+        f"    if cols <= 0:\n"
+        f"        return 0\n"
+        f"    rows = n // cols\n"
+        f"    diag_sum = 0\n"
+        f"    off_diag = 0\n"
+        f"    diag_count = 0\n"
+        f"    for r in range(rows):\n"
+        f"        for c in range(cols):\n"
+        f"            idx = r * cols + c\n"
+        f"            if idx < n:\n"
+        f"                val = xs[idx]\n"
+        f"                if r == c:\n"
+        f"                    diag_sum += val {op} {offset}\n"
+        f"                    diag_count += 1\n"
+        f"                else:\n"
+        f"                    off_diag += val\n"
+        f"    total = diag_sum + off_diag\n"
+        f"    if diag_count == 0:\n"
+        f"        return 0\n"
+        f"    result = diag_sum\n"
+        f"    return result\n"
+    )
+
+    equiv1 = (
+        f"def {fname}(xs: list, cols: int) -> int:\n"
+        f"    n = len(xs)\n"
+        f"    if cols <= 0:\n"
+        f"        return 0\n"
+        f"    rows = n // cols\n"
+        f"    diag_sum = 0\n"
+        f"    off_diag = 0\n"
+        f"    diag_count = 0\n"
+        f"    for r in range(rows):\n"
+        f"        c = 0\n"
+        f"        while c < cols:\n"
+        f"            idx = r * cols + c\n"
+        f"            if idx < n:\n"
+        f"                val = xs[idx]\n"
+        f"                is_diag = r == c\n"
+        f"                if is_diag:\n"
+        f"                    diag_sum = diag_sum + (val {op} {offset})\n"
+        f"                    diag_count = diag_count + 1\n"
+        f"                else:\n"
+        f"                    off_diag = off_diag + val\n"
+        f"            c += 1\n"
+        f"    total = diag_sum + off_diag\n"
+        f"    if diag_count == 0:\n"
+        f"        return 0\n"
+        f"    result = diag_sum\n"
+        f"    return result\n"
+    )
+
+    equiv2 = (
+        f"def {fname}(xs: list, cols: int) -> int:\n"
+        f"    n = len(xs)\n"
+        f"    if cols <= 0:\n"
+        f"        return 0\n"
+        f"    rows = n // cols\n"
+        f"    diag_vals = []\n"
+        f"    off_diag = 0\n"
+        f"    for r in range(rows):\n"
+        f"        for c in range(cols):\n"
+        f"            idx = r * cols + c\n"
+        f"            if idx < n:\n"
+        f"                val = xs[idx]\n"
+        f"                if r == c:\n"
+        f"                    diag_vals.append(val {op} {offset})\n"
+        f"                else:\n"
+        f"                    off_diag += val\n"
+        f"    diag_count = len(diag_vals)\n"
+        f"    if diag_count == 0:\n"
+        f"        return 0\n"
+        f"    diag_sum = sum(diag_vals)\n"
+        f"    total = diag_sum + off_diag\n"
+        f"    result = diag_sum\n"
+        f"    return result\n"
+    )
+
+    wrong_op = _arith_flip(op)
+    mut1 = {
+        "source": source.replace(
+            f"val {op} {offset}", f"val {wrong_op} {offset}"
+        ),
+        "description":
+            f"changed diagonal operator '{op}' to '{wrong_op}'",
+    }
+    mut2 = {
+        "source": source.replace("r == c", "r != c"),
+        "description":
+            "swapped diagonal with off-diagonal — sums wrong elements",
+    }
+
+    return source, [equiv1, equiv2], [mut1, mut2]
+
+
+# ---------------------------------------------------------------------------
 # Blueprint registry
 # ---------------------------------------------------------------------------
 
@@ -1784,6 +2303,41 @@ _BLUEPRINTS: list[dict[str, Any]] = [
         "param_types": ["list[int]", "int"],
         "return_type": "list[int]",
         "build": lambda fname, rng: _bp_list_partition(fname, rng),
+    },
+    {
+        "id": "dict_value_transform",
+        "category": "dictionary",
+        "param_types": ["dict[str,int]"],
+        "return_type": "int",
+        "build": lambda fname, rng: _bp_dict_value_transform(fname, rng),
+    },
+    {
+        "id": "float_weighted_sum",
+        "category": "mathematical",
+        "param_types": ["list[float]", "float"],
+        "return_type": "float",
+        "build": lambda fname, rng: _bp_float_weighted_sum(fname, rng),
+    },
+    {
+        "id": "set_symmetric_diff",
+        "category": "set_operations",
+        "param_types": ["list[int]", "list[int]"],
+        "return_type": "int",
+        "build": lambda fname, rng: _bp_set_symmetric_diff(fname, rng),
+    },
+    {
+        "id": "nested_accumulate",
+        "category": "nested_loops",
+        "param_types": ["list[int]"],
+        "return_type": "int",
+        "build": lambda fname, rng: _bp_nested_accumulate(fname, rng),
+    },
+    {
+        "id": "matrix_trace",
+        "category": "matrix",
+        "param_types": ["list[int]", "int"],
+        "return_type": "int",
+        "build": lambda fname, rng: _bp_matrix_trace(fname, rng),
     },
 ]
 
