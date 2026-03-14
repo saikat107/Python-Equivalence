@@ -71,3 +71,52 @@ class TestInputGenerator:
             assert len(reprs) == len(set(reprs)), (
                 f"Duplicate inputs found for param_types={param_types}"
             )
+
+    def test_float_param(self):
+        gen = InputGenerator(["float"], seed=0)
+        inputs = gen.generate(n=500)
+        assert len(inputs) > 0
+        for (v,) in inputs:
+            assert isinstance(v, float)
+
+    def test_list_float_param(self):
+        gen = InputGenerator(["list[float]"], seed=0)
+        inputs = gen.generate(n=500)
+        assert len(inputs) > 0
+        for (lst,) in inputs:
+            assert isinstance(lst, list)
+            assert all(isinstance(x, float) for x in lst)
+
+    def test_set_int_param(self):
+        gen = InputGenerator(["set[int]"], seed=0)
+        inputs = gen.generate(n=500)
+        assert len(inputs) > 0
+        for (s,) in inputs:
+            assert isinstance(s, set)
+            assert all(isinstance(x, int) for x in s)
+
+    def test_dict_str_int_param(self):
+        gen = InputGenerator(["dict[str,int]"], seed=0)
+        inputs = gen.generate(n=500)
+        assert len(inputs) > 0
+        for (d,) in inputs:
+            assert isinstance(d, dict)
+            for k, v in d.items():
+                assert isinstance(k, str)
+                assert isinstance(v, int)
+
+    def test_tuple_int_param(self):
+        gen = InputGenerator(["tuple[int,...]"], seed=0)
+        inputs = gen.generate(n=500)
+        assert len(inputs) > 0
+        for (t,) in inputs:
+            assert isinstance(t, tuple)
+            assert all(isinstance(x, int) for x in t)
+
+    def test_float_and_list_float_two_params(self):
+        gen = InputGenerator(["list[float]", "float"], seed=0)
+        inputs = gen.generate(n=500)
+        assert len(inputs) > 0
+        for lst, v in inputs:
+            assert isinstance(lst, list)
+            assert isinstance(v, float)
