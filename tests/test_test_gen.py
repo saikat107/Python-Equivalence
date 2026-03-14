@@ -1,7 +1,7 @@
-"""Tests for benchmark_generator.test_gen."""
+"""Tests for equivalence_benchmarks.test_gen."""
 
 import pytest
-from benchmark_generator.test_gen import InputGenerator
+from equivalence_benchmarks.test_gen import InputGenerator
 
 
 class TestInputGenerator:

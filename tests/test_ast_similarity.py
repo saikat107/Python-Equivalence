@@ -1,8 +1,8 @@
-"""Tests for benchmark_generator.ast_similarity."""
+"""Tests for equivalence_benchmarks.ast_similarity."""
 
 import pytest
 
-from benchmark_generator.ast_similarity import (
+from equivalence_benchmarks.ast_similarity import (
     ast_similarity,
     _ast_to_sequence,
     _edit_distance,

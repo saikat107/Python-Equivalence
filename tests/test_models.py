@@ -1,7 +1,7 @@
-"""Tests for benchmark_generator.models."""
+"""Tests for equivalence_benchmarks.models."""
 
 import pytest
-from benchmark_generator.models import BenchmarkEntry
+from equivalence_benchmarks.models import BenchmarkEntry
 
 
 def _make_entry(n_ptests: int, n_ntests: int, is_equivalent: bool) -> BenchmarkEntry:

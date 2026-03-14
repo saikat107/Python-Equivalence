@@ -1,2 +1,2 @@
-# benchmark generator — Python 3.9+
+# equivalence benchmarks — Python 3.9+
 tqdm>=4.60

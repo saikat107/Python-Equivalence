@@ -1,8 +1,8 @@
 """
-benchmark_generator — tools to create a Python equivalence-checker benchmark.
+equivalence_benchmarks — tools to create a Python equivalence-checker benchmark.
 
 Usage (from repo root):
-    python generate_benchmark.py
+    python src/generate_benchmark.py
 """
 
 from .ast_similarity import ast_similarity

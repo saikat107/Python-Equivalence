@@ -300,7 +300,7 @@ A single generation run can produce:
 
 ## 7. Evaluation
 
-The companion script `evaluate_benchmark.py` independently verifies the generated benchmark by:
+The companion script `src/evaluate_benchmark.py` independently verifies the generated benchmark by:
 
 1. Loading each entry and compiling both `p1` and `p2` via `exec`
 2. Running both functions on all stored ptests and ntests

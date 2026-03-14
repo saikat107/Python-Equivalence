@@ -8,7 +8,7 @@ stored ptests and ntests, and reports accuracy statistics.
 
 Usage
 -----
-    python evaluate_benchmark.py benchmark_output/benchmark_20260101_120000.json
+    python src/evaluate_benchmark.py benchmark_output/benchmark_20260101_120000.json
 
 Options:
     --verbose          Print per-entry results
@@ -34,7 +34,7 @@ from tqdm import tqdm
 # Make sure the package is importable when run from the repo root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from benchmark_generator.progress import setup_file_logger, log_message
+from equivalence_benchmarks.progress import setup_file_logger, log_message
 
 
 def _parse_args() -> argparse.Namespace:

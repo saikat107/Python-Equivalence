@@ -1,7 +1,7 @@
-"""Tests for benchmark_generator.catalog."""
+"""Tests for equivalence_benchmarks.catalog."""
 
 import pytest
-from benchmark_generator.catalog import CATALOG
+from equivalence_benchmarks.catalog import CATALOG
 
 
 class TestCatalog:

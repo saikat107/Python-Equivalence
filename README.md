@@ -26,25 +26,25 @@ Ground truth comes from *construction provenance*, not test results:
 
 ```bash
 # Generate 1000 benchmark entries using AST-random generation (default)
-python generate_benchmark.py --num-examples 1000
+python src/generate_benchmark.py --num-examples 1000
 
 # All catalog categories + save to benchmark_output/
-python generate_benchmark.py --include-catalog
+python src/generate_benchmark.py --include-catalog
 
 # Include randomly generated template functions
-python generate_benchmark.py --include-random --random-count 20
+python src/generate_benchmark.py --include-random --random-count 20
 
 # Include AST-based random functions
-python generate_benchmark.py --include-ast-random --ast-random-count 50
+python src/generate_benchmark.py --include-ast-random --ast-random-count 50
 
 # Combine multiple sources
-python generate_benchmark.py --include-catalog --include-random --include-ast-random
+python src/generate_benchmark.py --include-catalog --include-random --include-ast-random
 
 # Only specific categories from catalog
-python generate_benchmark.py --include-catalog --categories aggregation filtering searching
+python src/generate_benchmark.py --include-catalog --categories aggregation filtering searching
 
 # Custom settings
-python generate_benchmark.py --seed 123 --min-ptests 500 --min-loc 30 --output my_bench/
+python src/generate_benchmark.py --seed 123 --min-ptests 500 --min-loc 30 --output my_bench/
 ```
 
 Output (in `benchmark_output/` by default):
@@ -60,13 +60,13 @@ Use the independent evaluation script to verify a generated benchmark:
 
 ```bash
 # Evaluate all entries in a benchmark
-python evaluate_benchmark.py benchmark_output/benchmark_20260101_120000.json
+python src/evaluate_benchmark.py benchmark_output/benchmark_20260101_120000.json
 
 # Verbose mode — print per-entry results
-python evaluate_benchmark.py benchmark_output/benchmark_*.json --verbose
+python src/evaluate_benchmark.py benchmark_output/benchmark_*.json --verbose
 
 # Custom per-call timeout
-python evaluate_benchmark.py benchmark_output/benchmark_*.json --per-call-timeout 10
+python src/evaluate_benchmark.py benchmark_output/benchmark_*.json --per-call-timeout 10
 ```
 
 The evaluator loads each entry, compiles both `p1` and `p2` via `exec`, runs them
@@ -91,7 +91,7 @@ Evaluation Summary
 
 ## CLI Reference
 
-### `generate_benchmark.py`
+### `src/generate_benchmark.py`
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -110,7 +110,7 @@ Evaluation Summary
 | `--categories CAT ...` | all | Restrict catalog to listed categories |
 | `--quiet` | off | Suppress progress output |
 
-### `evaluate_benchmark.py`
+### `src/evaluate_benchmark.py`
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -123,17 +123,18 @@ Evaluation Summary
 ## Repository Structure
 
 ```
-generate_benchmark.py          # Entry-point: generate a benchmark
-evaluate_benchmark.py          # Entry-point: evaluate a benchmark
-benchmark_generator/
-    __init__.py
-    models.py                  # BenchmarkEntry dataclass
-    catalog.py                 # 18+ seed functions with equivalents & mutations
-    program_gen.py             # Template-based random program generator
-    random_func_gen.py         # AST-based random function generator (20 blueprints)
-    test_gen.py                # Type-directed test input generator
-    runner.py                  # Safe function execution (subprocess + per-call timeout)
-    generator.py               # Orchestration (min-loc filtering, num-examples support)
+src/
+    generate_benchmark.py          # Entry-point: generate a benchmark
+    evaluate_benchmark.py          # Entry-point: evaluate a benchmark
+    equivalence_benchmarks/
+        __init__.py
+        models.py                  # BenchmarkEntry dataclass
+        catalog.py                 # 18+ seed functions with equivalents & mutations
+        program_gen.py             # Template-based random program generator
+        random_func_gen.py         # AST-based random function generator (20 blueprints)
+        test_gen.py                # Type-directed test input generator
+        runner.py                  # Safe function execution (subprocess + per-call timeout)
+        generator.py               # Orchestration (min-loc filtering, num-examples support)
 tests/
     test_models.py
     test_catalog.py
