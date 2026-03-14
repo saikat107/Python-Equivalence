@@ -484,6 +484,7 @@ class InputFuzzer:
             # Replace with random list
             length = max(0, len(result) + self._rng.randint(-1, 2))
             chars = list(string.ascii_lowercase[:8])
+            result = [self._rng.choice(chars) for _ in range(length)]
         return result
 
     # ------------------------------------------------------------------
