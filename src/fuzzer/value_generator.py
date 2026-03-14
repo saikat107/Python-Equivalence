@@ -17,6 +17,11 @@ from typing import Any
 from .type_parser import TypeNode
 
 
+# Extra attempts per target size when generating dicts/sets, to compensate
+# for duplicate keys or unhashable values that must be discarded.
+_COLLECTION_ATTEMPTS_FACTOR = 3
+
+
 class ValueGenerator:
     """Generate random values that conform to a :class:`TypeNode` specification.
 
@@ -171,7 +176,7 @@ class ValueGenerator:
         val_t = node.args[1] if len(node.args) >= 2 else TypeNode("int")
         size = self._rng.randint(0, self._max_size)
         result: dict = {}
-        for _ in range(size * 3):
+        for _ in range(size * _COLLECTION_ATTEMPTS_FACTOR):
             if len(result) >= size:
                 break
             key = self.generate(key_t, _depth=depth + 1)
@@ -201,7 +206,7 @@ class ValueGenerator:
         elem = node.args[0] if node.args else TypeNode("int")
         size = self._rng.randint(0, self._max_size)
         result: set = set()
-        for _ in range(size * 3):
+        for _ in range(size * _COLLECTION_ATTEMPTS_FACTOR):
             if len(result) >= size:
                 break
             val = self.generate(elem, _depth=depth + 1)
