@@ -293,7 +293,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--num-inputs",
         type=int,
-        default=1000,
+        default=100000,
         metavar="N",
         help="Maximum number of unique inputs to test (default: 1000)",
     )
