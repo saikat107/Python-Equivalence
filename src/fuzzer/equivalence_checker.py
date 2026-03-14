@@ -307,7 +307,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timeout",
         type=float,
-        default=5.0,
+        default=120.0,
         metavar="SECS",
         help="Per-call timeout in seconds (default: 5)",
     )
