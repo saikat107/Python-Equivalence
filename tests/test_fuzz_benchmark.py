@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 # Make sure the repo root is importable
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fuzz_benchmark import (
     InputFuzzer,

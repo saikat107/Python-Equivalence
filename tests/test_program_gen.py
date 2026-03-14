@@ -1,8 +1,8 @@
-"""Tests for benchmark_generator.program_gen (RandomProgramGenerator)."""
+"""Tests for equivalence_benchmarks.program_gen (RandomProgramGenerator)."""
 
 import ast
 import pytest
-from benchmark_generator.program_gen import RandomProgramGenerator
+from equivalence_benchmarks.program_gen import RandomProgramGenerator
 
 
 class TestRandomProgramGenerator:

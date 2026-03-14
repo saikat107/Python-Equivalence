@@ -1,8 +1,8 @@
-"""Tests for benchmark_generator.random_func_gen (RandomFunctionGenerator)."""
+"""Tests for equivalence_benchmarks.random_func_gen (RandomFunctionGenerator)."""
 
 import ast
 import pytest
-from benchmark_generator.random_func_gen import RandomFunctionGenerator
+from equivalence_benchmarks.random_func_gen import RandomFunctionGenerator
 
 
 class TestRandomFunctionGenerator:

@@ -2,8 +2,8 @@
 
 import pytest
 
-from benchmark_generator.generator import deduplicate_entries, _normalize_source
-from benchmark_generator.models import BenchmarkEntry
+from equivalence_benchmarks.generator import deduplicate_entries, _normalize_source
+from equivalence_benchmarks.models import BenchmarkEntry
 
 
 def _entry(

@@ -1,7 +1,7 @@
-"""Tests for benchmark_generator.runner."""
+"""Tests for equivalence_benchmarks.runner."""
 
 import pytest
-from benchmark_generator.runner import SafeRunner
+from equivalence_benchmarks.runner import SafeRunner
 
 
 SIMPLE_SUM = """\

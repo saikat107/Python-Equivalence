@@ -9,7 +9,7 @@ import os
 import tempfile
 import pytest
 
-from benchmark_generator.generator import BenchmarkGenerator
+from equivalence_benchmarks.generator import BenchmarkGenerator
 
 
 class TestBenchmarkGeneratorIntegration:
@@ -122,7 +122,7 @@ class TestBenchmarkGeneratorIntegration:
 
     def test_no_identical_p1_p2(self, small_benchmark):
         """No entry should have p1 and p2 that are identical."""
-        from benchmark_generator.generator import _normalize_source
+        from equivalence_benchmarks.generator import _normalize_source
 
         entries, _ = small_benchmark
         for e in entries:

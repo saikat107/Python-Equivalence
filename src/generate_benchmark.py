@@ -4,15 +4,15 @@ generate_benchmark.py — single entry point for the benchmark generator.
 
 Run with no arguments to generate the full benchmark:
 
-    python generate_benchmark.py
+    python src/generate_benchmark.py
 
 Common options:
 
-    python generate_benchmark.py --output my_benchmark/
-    python generate_benchmark.py --include-random --random-count 30
-    python generate_benchmark.py --categories aggregation filtering
-    python generate_benchmark.py --seed 123 --min-ptests 500
-    python generate_benchmark.py --num-examples 500
+    python src/generate_benchmark.py --output my_benchmark/
+    python src/generate_benchmark.py --include-random --random-count 30
+    python src/generate_benchmark.py --categories aggregation filtering
+    python src/generate_benchmark.py --seed 123 --min-ptests 500
+    python src/generate_benchmark.py --num-examples 500
 
 The output directory will contain:
     benchmark_<timestamp>.json   — all benchmark entries in JSON
@@ -30,8 +30,8 @@ from tqdm import tqdm
 # Make sure the package is importable when run from the repo root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from benchmark_generator.generator import BenchmarkGenerator, deduplicate_entries
-from benchmark_generator.progress import setup_file_logger, log_message
+from equivalence_benchmarks.generator import BenchmarkGenerator, deduplicate_entries
+from equivalence_benchmarks.progress import setup_file_logger, log_message
 
 
 def _parse_args() -> argparse.Namespace:
