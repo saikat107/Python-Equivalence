@@ -286,7 +286,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--time-limit",
         type=float,
-        default=30.0,
+        default=3600.0,
         metavar="SECS",
         help="Maximum fuzzing time in seconds (default: 30)",
     )
