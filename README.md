@@ -13,7 +13,7 @@ This project generates a benchmark dataset of the form **(p1, p2, ptests, ntests
 | `ptests` | List of input tuples where `p1(*t) == p2(*t)` |
 | `ntests` | List of input tuples where `p1(*t) != p2(*t)` |
 
-**Positive pairs** (semantically equivalent) have ≥ 1 000 distinct ptests and 0 ntests.
+**Positive pairs** (semantically equivalent) have ≥ 1,000 distinct ptests and 0 ntests.
 **Negative pairs** (semantically non-equivalent) have ≥ 1 ntest.
 
 Ground truth comes from *construction provenance*, not test results:
@@ -219,10 +219,10 @@ The generation pipeline, orchestrated by `generator.py`, proceeds as follows for
 
 1. **Seed Instantiation** — A seed function is drawn from the catalog, generated from a parameterized template, or synthesized from an AST blueprint.
 2. **Pair Construction** — Positive pairs are formed by pairing the seed with each of its equivalents; negative pairs by pairing it with each of its mutations.
-3. **Input Generation** — A type-directed input generator (`test_gen.py`) produces ≥ 1 500 diverse inputs covering edge cases and random values.
+3. **Input Generation** — A type-directed input generator (`test_gen.py`) produces ≥ 1,500 diverse inputs covering edge cases and random values.
 4. **Execution** — Both functions in a pair are executed on all inputs inside a sandboxed subprocess with per-call and batch-level timeouts (`runner.py`).
 5. **Partitioning** — Inputs are classified into *ptests* (both functions agree) and *ntests* (they disagree). Inputs causing runtime errors are discarded.
-6. **Validation** — Positive pairs require ≥ 1 000 distinct ptests and 0 ntests. Negative pairs require ≥ 1 ntest.
+6. **Validation** — Positive pairs require ≥ 1,000 distinct ptests and 0 ntests. Negative pairs require ≥ 1 ntest.
 7. **Serialization** — Valid entries are saved as JSON with test data in separate files.
 
 ---
@@ -237,7 +237,7 @@ The benchmark generator uses three complementary strategies, each contributing s
 |----------|--------|-------------|
 | **Hand-Curated Catalog** | `catalog.py` | 26 carefully designed seed functions spanning 8 categories, each with 2 equivalents and 2 mutations. |
 | **Template-Based Generation** | `program_gen.py` | 9 parameterized template families instantiated with random operators and constants, each producing 2 equivalents and 2 mutations. |
-| **AST-Based Blueprint Generation** | `random_func_gen.py` | 20 blueprint patterns generating complex functions (≥ 20 LOC) with diverse control flow, each with 2 equivalents and 2 mutations. |
+| **AST-Based Blueprint Generation** | `random_func_gen.py` | 20 blueprint patterns generating complex functions (≥20 LOC) with diverse control flow, each with 2 equivalents and 2 mutations. |
 
 ### Seed categories (catalog)
 
@@ -274,7 +274,7 @@ Each template instantiation produces a unique function name (e.g., `filter_thres
 
 ### AST-based random functions (blueprints)
 
-Twenty blueprint patterns generate complex functions with ≥ 20 LOC, diverse control flow (nested loops, multi-branch conditionals, state tracking), and multiple intermediate variables:
+Twenty blueprint patterns generate complex functions with ≥20 LOC, diverse control flow (nested loops, multi-branch conditionals, state tracking), and multiple intermediate variables:
 
 | Blueprint | Algorithmic Pattern | Mutation Types |
 |-----------|-------------------|----------------|
@@ -312,7 +312,7 @@ The type-directed generator covers:
 - **`str`**: empty, palindromes, mixed case, vowel-heavy, random
 - **`bool`**: both values
 
-For functions with domain preconditions (`non-empty list`, `lo ≤ hi`, `n ≥ 0`), the generator applies an `input_filter` and oversamples to ensure ≥ 1 000 valid inputs survive filtering.
+For functions with domain preconditions (`non-empty list`, `lo ≤ hi`, `n ≥ 0`), the generator applies an `input_filter` and oversamples to ensure ≥ 1,000 valid inputs survive filtering.
 
 ---
 
