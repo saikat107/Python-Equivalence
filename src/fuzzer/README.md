@@ -129,7 +129,7 @@ python src/fuzzer/equivalence_checker.py pair2.py add multiply
 |---|---|---|
 | `--file2 FILE` | *(same as file1)* | Source file for the second function |
 | `--time-limit SECS` | 3600 | Maximum fuzzing time |
-| `--num-inputs N` | 1000 | Maximum number of unique inputs |
+| `--num-inputs N` | 100000 | Maximum number of unique inputs |
 | `--seed S` | None | Random seed for reproducibility |
 | `--timeout SECS` | 5 | Per-call timeout in seconds |
 
