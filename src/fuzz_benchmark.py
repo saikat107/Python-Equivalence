@@ -672,13 +672,13 @@ class InputFuzzer:
         if t == "set[int]":
             length = self._rng.randint(0, 8)
             pool = self._hint_ints if self._hint_ints else None
-            items: set = set()
+            items_set: set[int] = set()
             for _ in range(length):
                 if pool and self._rng.random() < 0.30:
-                    items.add(self._rng.choice(pool))
+                    items_set.add(self._rng.choice(pool))
                 else:
-                    items.add(self._rng.randint(-10, 10))
-            return items
+                    items_set.add(self._rng.randint(-10, 10))
+            return items_set
         if t == "dict[str,int]":
             length = self._rng.randint(0, 5)
             result = {}

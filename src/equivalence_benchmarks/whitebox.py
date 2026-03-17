@@ -103,7 +103,7 @@ _CMP_OP_MAP = {
 }
 
 
-def _walk(node: ast.AST, hints: ASTHints) -> None:  # noqa: C901 — intentional
+def _walk(node: ast.AST, hints: ASTHints) -> None:  # noqa: C901 -- intentional
     """Recursively walk the AST and populate *hints*."""
     for child in ast.walk(node):
         # -- constants / literals ------------------------------------------
