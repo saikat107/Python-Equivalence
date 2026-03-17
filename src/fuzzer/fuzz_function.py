@@ -80,20 +80,116 @@ def _run_with_timeout(
 # Core logic
 # ---------------------------------------------------------------------------
 
+def _fuzz_coverage_guided_with_stats(
+    source: str,
+    func_name: str,
+    num_inputs: int,
+    seed: int | None,
+    per_call_timeout: float,
+) -> tuple[list[dict], dict]:
+    """Coverage-guided fuzzing variant.
+
+    Uses :class:`~equivalence_benchmarks.whitebox.CoverageTracker` to
+    measure line and branch coverage and :func:`~equivalence_benchmarks.whitebox.analyse_source`
+    to extract boundary-value hints from the target source.  Inputs that
+    increase coverage are added to a corpus; subsequent inputs are generated
+    either as mutations of corpus entries (40 %) or as fresh random values
+    (60 %).
+
+    Returns ``(results, stats)`` where *stats* is a dict containing
+    ``lines_covered``, ``branches_covered``, and ``corpus_size``.
+    """
+    try:
+        from equivalence_benchmarks.whitebox import CoverageTracker, analyse_source
+    except ImportError as exc:
+        raise ImportError(
+            "Coverage-guided fuzzing requires the equivalence_benchmarks package. "
+            "Ensure the src/ directory is on PYTHONPATH."
+        ) from exc
+
+    hints = analyse_source(source)
+    sig = extract_function_signature(source, func_name)
+    param_types = sig.param_types()
+
+    gen = ValueGenerator(seed=seed, hints=hints)
+
+    compile_filename = "<fuzz_target>"
+    namespace: dict[str, Any] = {}
+    exec(compile(source, compile_filename, "exec"), namespace)  # noqa: S102
+    fn = namespace.get(func_name)
+    if fn is None:
+        raise RuntimeError(f"Function '{func_name}' not found after compilation")
+
+    tracker = CoverageTracker()
+    corpus: list[tuple] = []
+    seen_keys: set[str] = set()
+    results: list[dict] = []
+    prev_lines = 0
+    prev_branches = 0
+
+    while len(results) < num_inputs:
+        if corpus and gen._rng.random() < 0.4:
+            seed_inp = gen._rng.choice(corpus)
+            inp = gen.mutate(seed_inp, param_types)
+        else:
+            inp = tuple(gen.generate(t) for t in param_types)
+
+        key = repr(inp)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        output, error = tracker.run(
+            fn, inp, timeout=per_call_timeout, filename=compile_filename
+        )
+        results.append({"input": inp, "output": output, "error": error})
+
+        cur_lines = tracker.lines_covered_count
+        cur_branches = tracker.branches_covered_count
+        if cur_lines > prev_lines or cur_branches > prev_branches:
+            corpus.append(inp)
+            prev_lines = cur_lines
+            prev_branches = cur_branches
+
+    stats = {
+        "lines_covered": tracker.lines_covered_count,
+        "branches_covered": tracker.branches_covered_count,
+        "corpus_size": len(corpus),
+    }
+    return results, stats
+
+
 def fuzz_function(
     source: str,
     func_name: str,
     num_inputs: int = 100,
     seed: int | None = None,
     per_call_timeout: float = 5.0,
+    coverage_guided: bool = False,
 ) -> list[dict]:
     """Fuzz *func_name* defined in *source* with random inputs.
+
+    Parameters
+    ----------
+    source : Python source code containing the function to fuzz.
+    func_name : name of the function to fuzz.
+    num_inputs : number of unique inputs to generate.
+    seed : optional random seed for reproducibility.
+    per_call_timeout : per-call timeout in seconds.
+    coverage_guided : when ``True``, use coverage tracking and AST-derived
+        boundary-value hints to bias generation toward unexplored code paths.
+        Requires the ``equivalence_benchmarks`` package on ``PYTHONPATH``.
 
     Returns a list of dicts, each containing:
       - ``input``: the input tuple
       - ``output``: the return value (or ``None`` on error)
       - ``error``: error string (or ``None`` on success)
     """
+    if coverage_guided:
+        results, _ = _fuzz_coverage_guided_with_stats(
+            source, func_name, num_inputs, seed, per_call_timeout
+        )
+        return results
     sig = extract_function_signature(source, func_name)
     param_types = sig.param_types()
 
@@ -154,6 +250,16 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="SECS",
         help="Timeout per function call in seconds (default: 5)",
     )
+    parser.add_argument(
+        "--coverage-guided",
+        action="store_true",
+        default=False,
+        help=(
+            "Use coverage-guided generation: track line/branch coverage and "
+            "bias inputs toward unexplored code paths using AST-derived hints. "
+            "Requires the equivalence_benchmarks package on PYTHONPATH."
+        ),
+    )
     return parser
 
 
@@ -181,16 +287,28 @@ def main(argv: list[str] | None = None) -> None:
     param_str = ", ".join(f"{n}: {t}" for n, t in sig.params)
     ret_str = f" -> {sig.return_type}" if sig.return_type else ""
 
+    mode = "coverage-guided" if args.coverage_guided else "random"
     print(f"Fuzzing: {sig.name}({param_str}){ret_str}")
-    print(f"Generating {args.num_inputs} random inputs (seed={args.seed})\n")
+    print(f"Mode: {mode}")
+    print(f"Generating {args.num_inputs} inputs (seed={args.seed})\n")
 
-    results = fuzz_function(
-        source=source,
-        func_name=args.function,
-        num_inputs=args.num_inputs,
-        seed=args.seed,
-        per_call_timeout=args.timeout,
-    )
+    if args.coverage_guided:
+        results, cov_stats = _fuzz_coverage_guided_with_stats(
+            source=source,
+            func_name=args.function,
+            num_inputs=args.num_inputs,
+            seed=args.seed,
+            per_call_timeout=args.timeout,
+        )
+    else:
+        results = fuzz_function(
+            source=source,
+            func_name=args.function,
+            num_inputs=args.num_inputs,
+            seed=args.seed,
+            per_call_timeout=args.timeout,
+        )
+        cov_stats = None
 
     errors = 0
     for i, r in enumerate(results, 1):
@@ -202,6 +320,12 @@ def main(argv: list[str] | None = None) -> None:
             print(f"  [{i:>4}] ({inp_str})  =>  {r['output']!r}")
 
     print(f"\nDone: {len(results)} inputs, {errors} errors.")
+    if cov_stats is not None:
+        print(
+            f"Coverage: {cov_stats['lines_covered']} lines, "
+            f"{cov_stats['branches_covered']} branches "
+            f"({cov_stats['corpus_size']} coverage-increasing inputs found)."
+        )
 
 
 if __name__ == "__main__":

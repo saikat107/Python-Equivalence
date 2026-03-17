@@ -30,6 +30,10 @@ class ValueGenerator:
     seed : optional random seed for reproducibility
     max_collection_size : upper bound for generated list/dict/set sizes
     max_depth : recursion guard for deeply nested types
+    hints : optional ``ASTHints`` from white-box analysis.  When provided,
+        boundary values and constants extracted from the source code are
+        included in the generation pools for ``int``, ``float``, and ``str``,
+        increasing the chance of triggering code-path boundaries.
     """
 
     def __init__(
@@ -37,10 +41,15 @@ class ValueGenerator:
         seed: int | None = None,
         max_collection_size: int = 5,
         max_depth: int = 4,
+        hints: Any = None,
     ) -> None:
         self._rng = random.Random(seed)
         self._max_size = max_collection_size
         self._max_depth = max_depth
+        # Pre-compute hint-derived pools (empty when no hints supplied)
+        self._hint_ints: list[int] = hints.boundary_ints() if hints is not None else []
+        self._hint_floats: list[float] = hints.boundary_floats() if hints is not None else []
+        self._hint_strs: list[str] = sorted(hints.str_constants) if hints is not None else []
 
     # ------------------------------------------------------------------
     # Public API
@@ -76,6 +85,55 @@ class ValueGenerator:
         # Unknown type → fall back to int
         return self._gen_int()
 
+    def mutate(self, inp: tuple, param_types: list[TypeNode]) -> tuple:
+        """Return a lightly mutated copy of *inp*.
+
+        Each argument is independently:
+        * kept unchanged (30 % chance),
+        * lightly mutated via :meth:`_mutate_val` (35 % chance), or
+        * fully regenerated from scratch (35 % chance).
+        """
+        result = []
+        for val, t in zip(inp, param_types):
+            r = self._rng.random()
+            if r < 0.30:
+                result.append(val)
+            elif r < 0.65:
+                result.append(self._mutate_val(val, t))
+            else:
+                result.append(self.generate(t))
+        return tuple(result)
+
+    def _mutate_val(self, val: Any, t: TypeNode) -> Any:
+        """Apply a small type-aware mutation to *val*."""
+        name = t.name
+        if name == "int" and isinstance(val, int):
+            return val + self._rng.randint(-5, 5)
+        if name == "float" and isinstance(val, float):
+            return round(val + self._rng.uniform(-1.0, 1.0), 2)
+        if name == "str" and isinstance(val, str):
+            strategy = self._rng.randint(0, 2)
+            if strategy == 0 and val:
+                # Remove one character
+                i = self._rng.randint(0, len(val) - 1)
+                return val[:i] + val[i + 1 :]
+            if strategy == 1:
+                # Append one character
+                return val + self._rng.choice(string.ascii_lowercase)
+            return self._gen_str()
+        if name == "bool":
+            return not val if isinstance(val, bool) else self._gen_bool()
+        if name == "list" and isinstance(val, list):
+            elem_t = t.args[0] if t.args else TypeNode("int")
+            if val and self._rng.random() < 0.5:
+                # Remove a random element
+                i = self._rng.randint(0, len(val) - 1)
+                return val[:i] + val[i + 1 :]
+            # Append a new element
+            return val + [self.generate(elem_t)]
+        # Fallback: fully regenerate
+        return self.generate(t)
+
     def generate_inputs(
         self,
         param_types: list[TypeNode],
@@ -106,6 +164,8 @@ class ValueGenerator:
     # ------------------------------------------------------------------
 
     def _gen_int(self) -> int:
+        if self._hint_ints and self._rng.random() < 0.3:
+            return self._rng.choice(self._hint_ints)
         strategy = self._rng.randint(0, 3)
         if strategy == 0:
             return self._rng.choice(
@@ -118,6 +178,8 @@ class ValueGenerator:
         return self._rng.choice([0, 1, -1])
 
     def _gen_float(self) -> float:
+        if self._hint_floats and self._rng.random() < 0.3:
+            return self._rng.choice(self._hint_floats)
         strategy = self._rng.randint(0, 2)
         if strategy == 0:
             return self._rng.choice(
@@ -128,6 +190,8 @@ class ValueGenerator:
         return round(self._rng.uniform(-500.0, 500.0), 2)
 
     def _gen_str(self) -> str:
+        if self._hint_strs and self._rng.random() < 0.3:
+            return self._rng.choice(self._hint_strs)
         strategy = self._rng.randint(0, 2)
         if strategy == 0:
             return self._rng.choice(

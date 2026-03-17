@@ -134,8 +134,22 @@ def check_equivalence(
     time_limit: float = 30.0,
     seed: int | None = None,
     per_call_timeout: float = 5.0,
+    coverage_guided: bool = False,
 ) -> dict:
-    """Check whether two functions are equivalent via random fuzzing.
+    """Check whether two functions are equivalent via fuzzing.
+
+    Parameters
+    ----------
+    source1, func_name1 : first function source and name.
+    source2, func_name2 : second function source and name.
+    num_inputs : maximum number of unique inputs to test.
+    time_limit : maximum wall-clock seconds to spend fuzzing.
+    seed : optional random seed for reproducibility.
+    per_call_timeout : per-call timeout in seconds.
+    coverage_guided : when ``True``, use :class:`~equivalence_benchmarks.whitebox.CoverageTracker`
+        to measure coverage of both functions and prefer inputs that reach
+        new lines or branches in either.  AST-derived hints from both sources
+        are merged to bias value generation toward boundary values.
 
     Returns a dict with:
       - ``equivalent``: True / False / None (if inconclusive)
@@ -145,6 +159,8 @@ def check_equivalence(
       - ``errors``: number of inputs that caused errors
       - ``compatible``: whether signatures matched
       - ``reason``: explanation string
+      - ``coverage_lines``: lines covered (only when *coverage_guided* is True)
+      - ``coverage_branches``: branches covered (only when *coverage_guided* is True)
     """
     sig1 = extract_function_signature(source1, func_name1)
     sig2 = extract_function_signature(source2, func_name2)
@@ -175,6 +191,22 @@ def check_equivalence(
         raise RuntimeError(f"Function '{func_name2}' not found after compilation")
 
     param_types = sig1.param_types()
+
+    if coverage_guided:
+        return _check_equivalence_coverage_guided(
+            source1=source1,
+            func_name1=func_name1,
+            fn1=fn1,
+            source2=source2,
+            func_name2=func_name2,
+            fn2=fn2,
+            param_types=param_types,
+            num_inputs=num_inputs,
+            time_limit=time_limit,
+            seed=seed,
+            per_call_timeout=per_call_timeout,
+        )
+
     gen = ValueGenerator(seed=seed)
 
     seen_keys: set[str] = set()
@@ -255,6 +287,155 @@ def check_equivalence(
     }
 
 
+def _check_equivalence_coverage_guided(
+    *,
+    source1: str,
+    func_name1: str,
+    fn1: Any,
+    source2: str,
+    func_name2: str,
+    fn2: Any,
+    param_types: list[TypeNode],
+    num_inputs: int,
+    time_limit: float,
+    seed: int | None,
+    per_call_timeout: float,
+) -> dict:
+    """Coverage-guided equivalence check.
+
+    Tracks coverage for both functions independently; inputs that increase
+    coverage in either function are added to a mutation corpus (AFL-style).
+    AST hints from both sources are merged to bias value generation.
+    """
+    try:
+        from equivalence_benchmarks.whitebox import CoverageTracker, analyse_source
+    except ImportError as exc:
+        raise ImportError(
+            "Coverage-guided fuzzing requires the equivalence_benchmarks package. "
+            "Ensure the src/ directory is on PYTHONPATH."
+        ) from exc
+
+    # Merge AST hints from both sources
+    hints1 = analyse_source(source1)
+    hints2 = analyse_source(source2)
+    # Produce a merged hints object by combining constant pools
+    from equivalence_benchmarks.whitebox import ASTHints
+    merged = ASTHints()
+    merged.int_constants = hints1.int_constants | hints2.int_constants
+    merged.float_constants = hints1.float_constants | hints2.float_constants
+    merged.str_constants = hints1.str_constants | hints2.str_constants
+    merged.bool_constants = hints1.bool_constants | hints2.bool_constants
+    merged.branch_count = hints1.branch_count + hints2.branch_count
+    merged.comparison_ops = hints1.comparison_ops + hints2.comparison_ops
+
+    gen = ValueGenerator(seed=seed, hints=merged)
+    tracker1 = CoverageTracker()
+    tracker2 = CoverageTracker()
+    corpus: list[tuple] = []
+    seen_keys: set[str] = set()
+    tested = 0
+    error_count = 0
+    prev_lines = 0
+    prev_branches = 0
+    start = time.monotonic()
+
+    while tested < num_inputs and (time.monotonic() - start) < time_limit:
+        if corpus and gen._rng.random() < 0.4:
+            seed_inp = gen._rng.choice(corpus)
+            inp = gen.mutate(seed_inp, param_types)
+        else:
+            inp = tuple(gen.generate(t) for t in param_types)
+
+        key = repr(inp)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        r1, e1 = tracker1.run(fn1, inp, timeout=per_call_timeout, filename="<func1>")
+        r2, e2 = tracker2.run(fn2, inp, timeout=per_call_timeout, filename="<func2>")
+        tested += 1
+
+        # Check whether this input increased combined coverage
+        cur_lines = tracker1.lines_covered_count + tracker2.lines_covered_count
+        cur_branches = (
+            tracker1.branches_covered_count + tracker2.branches_covered_count
+        )
+        if cur_lines > prev_lines or cur_branches > prev_branches:
+            corpus.append(inp)
+            prev_lines = cur_lines
+            prev_branches = cur_branches
+
+        if e1 is not None or e2 is not None:
+            error_count += 1
+            if (e1 is None) != (e2 is None):
+                elapsed = time.monotonic() - start
+                return {
+                    "equivalent": False,
+                    "inputs_tested": tested,
+                    "counterexample": {
+                        "input": inp,
+                        "output1": r1,
+                        "error1": e1,
+                        "output2": r2,
+                        "error2": e2,
+                    },
+                    "time_elapsed": round(elapsed, 2),
+                    "errors": error_count,
+                    "compatible": True,
+                    "reason": (
+                        "Counterexample found: one function errored "
+                        "while the other did not"
+                    ),
+                    "coverage_lines": cur_lines,
+                    "coverage_branches": cur_branches,
+                }
+            continue
+
+        if r1 != r2:
+            elapsed = time.monotonic() - start
+            return {
+                "equivalent": False,
+                "inputs_tested": tested,
+                "counterexample": {
+                    "input": inp,
+                    "output1": r1,
+                    "error1": None,
+                    "output2": r2,
+                    "error2": None,
+                },
+                "time_elapsed": round(elapsed, 2),
+                "errors": error_count,
+                "compatible": True,
+                "reason": (
+                    f"Counterexample found: "
+                    f"{func_name1} returned {r1!r}, "
+                    f"{func_name2} returned {r2!r}"
+                ),
+                "coverage_lines": cur_lines,
+                "coverage_branches": cur_branches,
+            }
+
+    elapsed = time.monotonic() - start
+    final_lines = tracker1.lines_covered_count + tracker2.lines_covered_count
+    final_branches = (
+        tracker1.branches_covered_count + tracker2.branches_covered_count
+    )
+    return {
+        "equivalent": True,
+        "inputs_tested": tested,
+        "counterexample": None,
+        "time_elapsed": round(elapsed, 2),
+        "errors": error_count,
+        "compatible": True,
+        "reason": (
+            f"No counterexample found after {tested} unique inputs "
+            f"in {elapsed:.1f}s"
+        ),
+        "coverage_lines": final_lines,
+        "coverage_branches": final_branches,
+    }
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -310,6 +491,17 @@ def _build_parser() -> argparse.ArgumentParser:
         default=120.0,
         metavar="SECS",
         help="Per-call timeout in seconds (default: 5)",
+    )
+    parser.add_argument(
+        "--coverage-guided",
+        action="store_true",
+        default=False,
+        help=(
+            "Use coverage-guided generation: track line/branch coverage of "
+            "both functions and bias inputs toward unexplored code paths using "
+            "AST-derived hints merged from both sources. "
+            "Requires the equivalence_benchmarks package on PYTHONPATH."
+        ),
     )
     return parser
 
@@ -368,9 +560,10 @@ def main(argv: list[str] | None = None) -> None:
         print(f"\n✗ Signatures are NOT compatible: {reason}")
         sys.exit(1)
 
+    mode = "coverage-guided" if args.coverage_guided else "random"
     print(f"\n✓ Signatures are compatible")
     print(
-        f"Fuzzing with up to {args.num_inputs} unique inputs "
+        f"Mode: {mode} | Up to {args.num_inputs} inputs "
         f"(time limit: {args.time_limit}s, seed: {args.seed})\n"
     )
 
@@ -383,11 +576,17 @@ def main(argv: list[str] | None = None) -> None:
         time_limit=args.time_limit,
         seed=args.seed,
         per_call_timeout=args.timeout,
+        coverage_guided=args.coverage_guided,
     )
 
     print(f"Tested {result['inputs_tested']} unique inputs in {result['time_elapsed']}s")
     if result["errors"]:
         print(f"  ({result['errors']} inputs caused errors)")
+    if "coverage_lines" in result:
+        print(
+            f"  Coverage: {result['coverage_lines']} lines, "
+            f"{result['coverage_branches']} branches"
+        )
 
     if result["equivalent"] is True:
         print(f"\n✓ Functions appear EQUIVALENT")
