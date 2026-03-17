@@ -38,7 +38,7 @@ Three complementary generation strategies are supported:
 |----------|-------|-------------|
 | **Hand-Curated Catalog** | 26 functions, 8 categories | Expert-designed seeds with carefully crafted equivalents and mutations |
 | **Template-Based** | 9 parameterized families | Randomly instantiated templates with diverse operators and constants |
-| **AST Blueprint** | 20 complex patterns | Functions with ≥ 20 LOC, nested loops, state machines, and multi-branch logic |
+| **AST Blueprint** | 24 complex patterns | Functions with ≥ 20 LOC, nested loops, state machines, and multi-branch logic |
 
 📖 [Full generation guide →](docs/benchmark-generation.md)
 
@@ -123,6 +123,21 @@ from fuzzer.fuzz_function import fuzz_function
 
 ---
 
+## Current Scale (Codebase Snapshot)
+
+- **26** hand-curated catalog seeds across **8** categories
+- **9** template-based generation families
+- **24** AST blueprint patterns for complex function synthesis
+- Benchmark input generator supports **10** signature type strings
+  (`int`, `float`, `bool`, `str`, `list[int]`, `list[str]`, `list[float]`,
+  `set[int]`, `dict[str,int]`, `tuple[int,...]`)
+- Standalone fuzzer value generation supports benchmark types plus additional
+  nested/composite forms such as `bytes`, `frozenset`, `Optional`, `Union`,
+  and `Any`
+- Test suite currently includes **253** tests
+
+---
+
 ## Quick Start
 
 ```bash
@@ -159,7 +174,7 @@ src/
 │   ├── models.py                  #   BenchmarkEntry dataclass
 │   ├── catalog.py                 #   26 hand-curated seed functions
 │   ├── program_gen.py             #   Template-based generation (9 families)
-│   ├── random_func_gen.py         #   AST blueprint generation (20 patterns)
+│   ├── random_func_gen.py         #   AST blueprint generation (24 patterns)
 │   ├── test_gen.py                #   Type-directed test input generator
 │   ├── runner.py                  #   Safe subprocess execution with timeouts
 │   ├── generator.py               #   Pipeline orchestration
@@ -174,7 +189,7 @@ src/
 data/
 └── benchmark_v1.json              # Pre-generated benchmark dataset
 docs/                              # Detailed documentation
-tests/                             # Test suite (~237 tests)
+tests/                             # Test suite (253 tests)
 ```
 
 ---
