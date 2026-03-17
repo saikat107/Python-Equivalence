@@ -31,7 +31,8 @@ Output:
 
 ```
 Fuzzing: sum_list(nums: list[int]) -> int
-Generating 20 random inputs (seed=None)
+Mode: random
+Generating 20 inputs (seed=None)
 
   [   1] ([3, -1, 7],)  =>  9
   [   2] ([],)  =>  0
@@ -50,6 +51,7 @@ Done: 20 inputs, 0 errors.
 | `--num-inputs N` | `100` | Number of random inputs to generate |
 | `--seed S` | `None` | Random seed for reproducibility |
 | `--timeout SECS` | `5` | Per-call timeout in seconds |
+| `--coverage-guided` | off | Use coverage-guided generation with AST-derived boundary-value hints (requires `equivalence_benchmarks` on `PYTHONPATH`) |
 
 ---
 
@@ -82,7 +84,7 @@ def sort_b(nums: list[int]) -> list[int]:
 Check equivalence:
 
 ```bash
-python src/fuzzer/equivalence_checker.py pair.py sort_a sort_b --time-limit 10
+python src/fuzzer/equivalence_checker.py pair.py sort_a sort_b --time-limit 10 --num-inputs 1000
 ```
 
 Output:
@@ -92,7 +94,7 @@ Function 1: sort_a(nums: list[int]) -> list[int]
 Function 2: sort_b(nums: list[int]) -> list[int]
 
 ✓ Signatures are compatible
-Fuzzing with up to 1000 unique inputs (time limit: 10.0s, seed: None)
+Mode: random | Up to 1000 inputs (time limit: 10.0s, seed: None)
 
 Tested 1000 unique inputs in 2.3s
 
@@ -135,6 +137,7 @@ python src/fuzzer/equivalence_checker.py pair2.py add multiply
 | `--num-inputs N` | `100000` | Maximum number of unique inputs |
 | `--seed S` | `None` | Random seed for reproducibility |
 | `--timeout SECS` | `120` | Per-call timeout in seconds |
+| `--coverage-guided` | off | Use coverage-guided generation: track line/branch coverage of both functions and bias inputs toward unexplored paths using AST-derived hints (requires `equivalence_benchmarks` on `PYTHONPATH`) |
 
 ---
 
@@ -179,6 +182,14 @@ handled correctly.
    called via daemon threads with a configurable per-call timeout. Outputs
    are compared with `==`.
 
+4. **Coverage-Guided Mode** (`--coverage-guided`): When enabled, the fuzzer
+   uses `sys.settrace`-based line and branch coverage tracking
+   (`whitebox.CoverageTracker`) and AST-derived boundary values
+   (`whitebox.analyse_source`) to bias generation toward unexplored code
+   paths. Inputs that increase coverage are added to a mutation corpus;
+   subsequent inputs are generated either as mutations of corpus entries
+   (40%) or as fresh random values (60%).
+
 ---
 
 ## Programmatic Use
@@ -199,14 +210,19 @@ print(sig.param_types())  # [TypeNode('list', [TypeNode('int')])]
 gen = ValueGenerator(seed=42)
 value = gen.generate(sig.param_types()[0])  # e.g. [3, -1, 7]
 
-# Fuzz a single function
+# Fuzz a single function (returns list[dict])
 results = fuzz_function(source_code, "my_func", num_inputs=50, seed=42)
-for inp, output, error in results:
-    print(f"  {inp} => {output}")
+for r in results:
+    if r["error"] is None:
+        print(f"  {r['input']} => {r['output']}")
+    else:
+        print(f"  {r['input']} => ERROR: {r['error']}")
 
 # Check equivalence of two functions
 result = check_equivalence(src1, "func_a", src2, "func_b", time_limit=10)
 print(result["equivalent"])       # True / False / None
-print(result["counterexample"])   # (input, output1, output2) or None
 print(result["inputs_tested"])    # number of inputs tested
+if result["counterexample"] is not None:
+    cx = result["counterexample"]
+    print(cx["input"], cx["output1"], cx["output2"])
 ```
