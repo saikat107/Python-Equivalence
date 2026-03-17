@@ -471,3 +471,219 @@ class TestCheckEquivalence:
             num_inputs=100, time_limit=10, seed=42,
         )
         assert result["equivalent"] is True
+
+
+# ===================================================================
+# ValueGenerator hints + mutate tests
+# ===================================================================
+
+
+class TestValueGeneratorHints:
+    """Test hint-aware generation and the mutate() method."""
+
+    def _make_hints(self, int_vals=(), float_vals=(), str_vals=()):
+        """Build a minimal duck-typed hints object."""
+        class FakeHints:
+            def boundary_ints(self):
+                return list(int_vals)
+            def boundary_floats(self):
+                return list(float_vals)
+            @property
+            def str_constants(self):
+                return set(str_vals)
+        return FakeHints()
+
+    def test_int_hint_used(self):
+        hints = self._make_hints(int_vals=[999])
+        gen = ValueGenerator(seed=0, hints=hints)
+        # Generate many ints; with 30% probability each will be 999
+        vals = [gen._gen_int() for _ in range(300)]
+        assert 999 in vals, "hint int value should appear in generated ints"
+
+    def test_float_hint_used(self):
+        hints = self._make_hints(float_vals=[3.14])
+        gen = ValueGenerator(seed=0, hints=hints)
+        vals = [gen._gen_float() for _ in range(300)]
+        assert 3.14 in vals, "hint float value should appear in generated floats"
+
+    def test_str_hint_used(self):
+        hints = self._make_hints(str_vals=["sentinel"])
+        gen = ValueGenerator(seed=0, hints=hints)
+        vals = [gen._gen_str() for _ in range(300)]
+        assert "sentinel" in vals, "hint string value should appear in generated strs"
+
+    def test_no_hints_unchanged_types(self):
+        gen = ValueGenerator(seed=42, hints=None)
+        assert isinstance(gen._gen_int(), int)
+        assert isinstance(gen._gen_float(), float)
+        assert isinstance(gen._gen_str(), str)
+
+    def test_mutate_returns_tuple(self):
+        gen = ValueGenerator(seed=42)
+        param_types = [TypeNode("int"), TypeNode("str")]
+        inp = (7, "hello")
+        mutated = gen.mutate(inp, param_types)
+        assert isinstance(mutated, tuple)
+        assert len(mutated) == 2
+        assert isinstance(mutated[0], int)
+        assert isinstance(mutated[1], str)
+
+    def test_mutate_bool_flips(self):
+        gen = ValueGenerator(seed=0)
+        param_types = [TypeNode("bool")]
+        # Force the mutation branch: run many times and expect both values
+        results = set()
+        for _ in range(200):
+            results.add(gen.mutate((True,), param_types)[0])
+        assert True in results
+        assert False in results
+
+    def test_mutate_int_stays_int(self):
+        gen = ValueGenerator(seed=42)
+        pt = [TypeNode("int")]
+        for _ in range(50):
+            val = gen.mutate((10,), pt)[0]
+            assert isinstance(val, int)
+
+    def test_mutate_list_changes_length(self):
+        gen = ValueGenerator(seed=42)
+        pt = [TypeNode("list", [TypeNode("int")])]
+        original = [1, 2, 3]
+        lengths = set()
+        for _ in range(100):
+            result = gen.mutate((original,), pt)[0]
+            assert isinstance(result, list)
+            lengths.add(len(result))
+        # Expect at least two distinct lengths
+        assert len(lengths) > 1, "mutate should sometimes add/remove list elements"
+
+
+# ===================================================================
+# Coverage-guided fuzz_function tests
+# ===================================================================
+
+
+class TestFuzzFunctionCoverageGuided:
+    def test_returns_correct_count(self):
+        src = textwrap.dedent("""\
+            def classify(x: int) -> str:
+                if x < 0:
+                    return "negative"
+                elif x == 0:
+                    return "zero"
+                else:
+                    return "positive"
+        """)
+        results = fuzz_function(
+            src, "classify", num_inputs=20, seed=42, coverage_guided=True
+        )
+        assert len(results) == 20
+
+    def test_result_structure(self):
+        src = textwrap.dedent("""\
+            def double(x: int) -> int:
+                return x * 2
+        """)
+        results = fuzz_function(
+            src, "double", num_inputs=10, seed=1, coverage_guided=True
+        )
+        for r in results:
+            assert "input" in r
+            assert "output" in r
+            assert "error" in r
+
+    def test_correct_outputs(self):
+        src = textwrap.dedent("""\
+            def double(x: int) -> int:
+                return x * 2
+        """)
+        results = fuzz_function(
+            src, "double", num_inputs=15, seed=7, coverage_guided=True
+        )
+        for r in results:
+            if r["error"] is None:
+                assert r["output"] == r["input"][0] * 2
+
+    def test_random_mode_structure_matches_coverage_guided(self):
+        """Results from random mode should have the same structure as coverage mode."""
+        src = textwrap.dedent("""\
+            def inc(x: int) -> int:
+                return x + 1
+        """)
+        r_random = fuzz_function(src, "inc", num_inputs=10, seed=42, coverage_guided=False)
+        r_guided = fuzz_function(src, "inc", num_inputs=10, seed=42, coverage_guided=True)
+        assert len(r_random) == len(r_guided)
+        for r in r_guided:
+            assert set(r.keys()) == {"input", "output", "error"}
+
+
+# ===================================================================
+# Coverage-guided check_equivalence tests
+# ===================================================================
+
+
+class TestCheckEquivalenceCoverageGuided:
+    def test_equivalent_functions(self):
+        src = textwrap.dedent("""\
+            def sort_a(nums: list[int]) -> list[int]:
+                return sorted(nums)
+
+            def sort_b(nums: list[int]) -> list[int]:
+                result = list(nums)
+                result.sort()
+                return result
+        """)
+        result = check_equivalence(
+            src, "sort_a", src, "sort_b",
+            num_inputs=100, time_limit=10, seed=42,
+            coverage_guided=True,
+        )
+        assert result["equivalent"] is True
+        assert result["compatible"] is True
+        assert result["counterexample"] is None
+        assert "coverage_lines" in result
+        assert "coverage_branches" in result
+        assert result["coverage_lines"] >= 0
+        assert result["coverage_branches"] >= 0
+
+    def test_non_equivalent_functions(self):
+        src = textwrap.dedent("""\
+            def add(x: int, y: int) -> int:
+                return x + y
+
+            def multiply(x: int, y: int) -> int:
+                return x * y
+        """)
+        result = check_equivalence(
+            src, "add", src, "multiply",
+            num_inputs=500, time_limit=10, seed=42,
+            coverage_guided=True,
+        )
+        assert result["equivalent"] is False
+        assert result["counterexample"] is not None
+        assert "coverage_lines" in result
+
+    def test_incompatible_signatures_unaffected(self):
+        src1 = "def f(x: int) -> int: return x"
+        src2 = "def g(x: str) -> str: return x"
+        result = check_equivalence(
+            src1, "f", src2, "g", coverage_guided=True
+        )
+        assert result["equivalent"] is None
+        assert result["compatible"] is False
+        # No coverage stats when signatures are incompatible
+        assert "coverage_lines" not in result
+
+    def test_coverage_stats_present_on_success(self):
+        src = textwrap.dedent("""\
+            def identity(x: int) -> int:
+                return x
+        """)
+        result = check_equivalence(
+            src, "identity", src, "identity",
+            num_inputs=20, time_limit=5, seed=0,
+            coverage_guided=True,
+        )
+        assert result["equivalent"] is True
+        assert isinstance(result["coverage_lines"], int)
+        assert isinstance(result["coverage_branches"], int)
