@@ -89,9 +89,9 @@ class ValueGenerator:
         """Return a lightly mutated copy of *inp*.
 
         Each argument is independently:
-        * kept unchanged (30 % chance),
-        * lightly mutated via :meth:`_mutate_val` (35 % chance), or
-        * fully regenerated from scratch (35 % chance).
+        * kept unchanged (30% chance),
+        * lightly mutated via :meth:`_mutate_val` (35% chance), or
+        * fully regenerated from scratch (35% chance).
         """
         result = []
         for val, t in zip(inp, param_types):

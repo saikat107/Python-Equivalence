@@ -69,6 +69,23 @@ class ASTHints:
             result.update([c - 1.0, c - 0.5, c, c + 0.5, c + 1.0])
         return sorted(result)
 
+    @classmethod
+    def merge(cls, *hints: "ASTHints") -> "ASTHints":
+        """Return a new :class:`ASTHints` combining all supplied *hints*.
+
+        Useful for merging hints extracted from multiple source files so that
+        the fuzzer can use constants from all functions under test.
+        """
+        merged = cls()
+        for h in hints:
+            merged.int_constants |= h.int_constants
+            merged.float_constants |= h.float_constants
+            merged.str_constants |= h.str_constants
+            merged.bool_constants |= h.bool_constants
+            merged.branch_count += h.branch_count
+            merged.comparison_ops += h.comparison_ops
+        return merged
+
 
 def analyse_source(source: str) -> ASTHints:
     """

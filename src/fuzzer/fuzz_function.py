@@ -52,6 +52,10 @@ from fuzzer.type_parser import (
 from fuzzer.value_generator import ValueGenerator
 
 
+# Probability of selecting a corpus entry for mutation rather than generating
+# a fresh random input in coverage-guided mode.
+_CORPUS_MUTATION_PROBABILITY = 0.4
+
 # ---------------------------------------------------------------------------
 # Safe execution helper
 # ---------------------------------------------------------------------------
@@ -128,7 +132,7 @@ def _fuzz_coverage_guided_with_stats(
     prev_branches = 0
 
     while len(results) < num_inputs:
-        if corpus and gen._rng.random() < 0.4:
+        if corpus and gen._rng.random() < _CORPUS_MUTATION_PROBABILITY:
             seed_inp = gen._rng.choice(corpus)
             inp = gen.mutate(seed_inp, param_types)
         else:

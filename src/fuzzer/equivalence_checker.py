@@ -59,6 +59,10 @@ from fuzzer.type_parser import (
 from fuzzer.value_generator import ValueGenerator
 
 
+# Probability of selecting a corpus entry for mutation rather than generating
+# a fresh random input in coverage-guided mode.
+_CORPUS_MUTATION_PROBABILITY = 0.4
+
 # ---------------------------------------------------------------------------
 # Safe execution helper
 # ---------------------------------------------------------------------------
@@ -308,25 +312,20 @@ def _check_equivalence_coverage_guided(
     AST hints from both sources are merged to bias value generation.
     """
     try:
-        from equivalence_benchmarks.whitebox import CoverageTracker, analyse_source
+        from equivalence_benchmarks.whitebox import (
+            ASTHints,
+            CoverageTracker,
+            analyse_source,
+        )
     except ImportError as exc:
         raise ImportError(
             "Coverage-guided fuzzing requires the equivalence_benchmarks package. "
             "Ensure the src/ directory is on PYTHONPATH."
         ) from exc
 
-    # Merge AST hints from both sources
-    hints1 = analyse_source(source1)
-    hints2 = analyse_source(source2)
-    # Produce a merged hints object by combining constant pools
-    from equivalence_benchmarks.whitebox import ASTHints
-    merged = ASTHints()
-    merged.int_constants = hints1.int_constants | hints2.int_constants
-    merged.float_constants = hints1.float_constants | hints2.float_constants
-    merged.str_constants = hints1.str_constants | hints2.str_constants
-    merged.bool_constants = hints1.bool_constants | hints2.bool_constants
-    merged.branch_count = hints1.branch_count + hints2.branch_count
-    merged.comparison_ops = hints1.comparison_ops + hints2.comparison_ops
+    # Merge AST hints from both sources so boundary values from either
+    # function feed into value generation.
+    merged = ASTHints.merge(analyse_source(source1), analyse_source(source2))
 
     gen = ValueGenerator(seed=seed, hints=merged)
     tracker1 = CoverageTracker()
@@ -340,7 +339,7 @@ def _check_equivalence_coverage_guided(
     start = time.monotonic()
 
     while tested < num_inputs and (time.monotonic() - start) < time_limit:
-        if corpus and gen._rng.random() < 0.4:
+        if corpus and gen._rng.random() < _CORPUS_MUTATION_PROBABILITY:
             seed_inp = gen._rng.choice(corpus)
             inp = gen.mutate(seed_inp, param_types)
         else:

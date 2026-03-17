@@ -604,7 +604,7 @@ class TestFuzzFunctionCoverageGuided:
             if r["error"] is None:
                 assert r["output"] == r["input"][0] * 2
 
-    def test_random_false_equivalent_behavior(self):
+    def test_random_mode_structure_matches_coverage_guided(self):
         """Results from random mode should have the same structure as coverage mode."""
         src = textwrap.dedent("""\
             def inc(x: int) -> int:
