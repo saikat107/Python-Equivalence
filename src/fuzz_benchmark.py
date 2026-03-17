@@ -10,13 +10,20 @@ evaluates both ``p1_source`` and ``p2_source`` on the newly generated tests.
 The evaluation logic mirrors ``evaluate_benchmark.py``: for each new test
 input, both functions are executed and compared.
 
-Fuzzing strategy
-----------------
-1. Load existing ptests/ntests as seeds.
-2. Mutate seeds (type-aware mutations for int, str, bool, list[int], list[str]).
-3. Run ``p1_source`` on each candidate to confirm it does not crash.
-4. Discard candidates that duplicate any existing test input.
-5. Collect up to ``--max-tests`` new unique inputs per entry, or stop after
+Fuzzing strategy (white-box, coverage-guided)
+----------------------------------------------
+1. **AST analysis**: parse both function sources to extract integer, float,
+   and string constants, comparison boundary values, and branch structure.
+   These "hints" bias mutations toward values that are likely to trigger
+   different code paths.
+2. Load existing ptests/ntests as seeds.
+3. Mutate seeds (type-aware mutations for int, float, str, bool, list, set,
+   dict, tuple).  Mutations are biased by the extracted AST hints.
+4. **Coverage tracking**: periodically run ``p1_source`` under
+   ``sys.settrace`` to measure line and branch coverage.  Inputs that
+   increase coverage are promoted as priority mutation seeds.
+5. Discard candidates that duplicate any existing test input.
+6. Collect up to ``--max-tests`` new unique inputs per entry, or stop after
    ``--max-time`` seconds per entry.
 
 Multiple entries are fuzzed in parallel using ``multiprocessing.Pool``.
@@ -57,6 +64,7 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from equivalence_benchmarks.progress import setup_file_logger, log_message
+from equivalence_benchmarks.whitebox import ASTHints, CoverageTracker, analyse_source
 
 
 # ---------------------------------------------------------------------------
@@ -174,15 +182,24 @@ class InputFuzzer:
     ----------
     param_types : list of type-annotation strings, e.g. ["list[int]", "int"]
     seed        : random seed for reproducibility
+    hints       : optional ``ASTHints`` from white-box analysis of the target
+                  function.  When provided, mutations are biased towards
+                  constants and boundary values extracted from the source code.
     """
 
     def __init__(
         self,
         param_types: list[str],
         seed: Optional[int] = None,
+        hints: Optional[ASTHints] = None,
     ) -> None:
         self.param_types = param_types
         self._rng = random.Random(seed)
+        self._hints = hints
+        # Pre-compute hint-derived value pools
+        self._hint_ints: list[int] = hints.boundary_ints() if hints else []
+        self._hint_floats: list[float] = hints.boundary_floats() if hints else []
+        self._hint_strs: list[str] = sorted(hints.str_constants) if hints else []
 
     def mutate(self, inp: tuple) -> tuple:
         """
@@ -227,6 +244,9 @@ class InputFuzzer:
     # ------------------------------------------------------------------
 
     def _mutate_int(self, value: int) -> int:
+        # 25% chance to use a hint-derived boundary value when available
+        if self._hint_ints and self._rng.random() < 0.25:
+            return self._rng.choice(self._hint_ints)
         strategy = self._rng.randint(0, 7)
         if strategy == 0:
             # Add small delta
@@ -262,6 +282,9 @@ class InputFuzzer:
         if not isinstance(value, (int, float)):
             return self._rng.uniform(-10.0, 10.0)
         value = float(value)
+        # 25% chance to use a hint-derived boundary value when available
+        if self._hint_floats and self._rng.random() < 0.25:
+            return self._rng.choice(self._hint_floats)
         strategy = self._rng.randint(0, 7)
         if strategy == 0:
             # Add small delta
@@ -300,6 +323,9 @@ class InputFuzzer:
     # ------------------------------------------------------------------
 
     def _mutate_str(self, value: str) -> str:
+        # 20% chance to use a string constant from the source when available
+        if self._hint_strs and self._rng.random() < 0.20:
+            return self._rng.choice(self._hint_strs)
         if not value:
             # Generate a short random string from empty
             length = self._rng.randint(1, 5)
@@ -356,9 +382,12 @@ class InputFuzzer:
 
         strategy = self._rng.randint(0, 8)
         if strategy == 0:
-            # Insert a random element
+            # Insert an element — prefer hint boundary values
             pos = self._rng.randint(0, len(result))
-            result.insert(pos, self._rng.randint(-10, 10))
+            if self._hint_ints and self._rng.random() < 0.4:
+                result.insert(pos, self._rng.choice(self._hint_ints))
+            else:
+                result.insert(pos, self._rng.randint(-10, 10))
         elif strategy == 1:
             # Delete a random element
             if result:
@@ -595,38 +624,82 @@ class InputFuzzer:
     def _random_value(self, type_str: str) -> Any:
         t = type_str.strip()
         if t == "int":
+            # 30% chance to pick from hint boundary values
+            if self._hint_ints and self._rng.random() < 0.30:
+                return self._rng.choice(self._hint_ints)
             return self._rng.randint(-500, 500)
         if t == "float":
+            if self._hint_floats and self._rng.random() < 0.30:
+                return self._rng.choice(self._hint_floats)
             return self._rng.uniform(-500.0, 500.0)
         if t == "bool":
             return self._rng.choice([True, False])
         if t == "str":
+            if self._hint_strs and self._rng.random() < 0.30:
+                return self._rng.choice(self._hint_strs)
             length = self._rng.randint(0, 8)
             return "".join(self._rng.choice(string.ascii_lowercase) for _ in range(length))
         if t in ("list[int]", "list"):
             length = self._rng.randint(0, 8)
-            return [self._rng.randint(-10, 10) for _ in range(length)]
+            pool = self._hint_ints if self._hint_ints else None
+            items = []
+            for _ in range(length):
+                if pool and self._rng.random() < 0.30:
+                    items.append(self._rng.choice(pool))
+                else:
+                    items.append(self._rng.randint(-10, 10))
+            return items
         if t == "list[float]":
             length = self._rng.randint(0, 8)
-            return [self._rng.uniform(-10.0, 10.0) for _ in range(length)]
+            pool = self._hint_floats if self._hint_floats else None
+            items = []
+            for _ in range(length):
+                if pool and self._rng.random() < 0.30:
+                    items.append(self._rng.choice(pool))
+                else:
+                    items.append(self._rng.uniform(-10.0, 10.0))
+            return items
         if t == "list[str]":
             length = self._rng.randint(0, 5)
             chars = list(string.ascii_lowercase[:8])
-            return [self._rng.choice(chars) for _ in range(length)]
+            items = []
+            for _ in range(length):
+                if self._hint_strs and self._rng.random() < 0.30:
+                    items.append(self._rng.choice(self._hint_strs))
+                else:
+                    items.append(self._rng.choice(chars))
+            return items
         if t == "set[int]":
             length = self._rng.randint(0, 8)
-            return {self._rng.randint(-10, 10) for _ in range(length)}
+            pool = self._hint_ints if self._hint_ints else None
+            items: set = set()
+            for _ in range(length):
+                if pool and self._rng.random() < 0.30:
+                    items.add(self._rng.choice(pool))
+                else:
+                    items.add(self._rng.randint(-10, 10))
+            return items
         if t == "dict[str,int]":
             length = self._rng.randint(0, 5)
             result = {}
             for _ in range(length):
                 key_len = self._rng.randint(1, 3)
                 key = "".join(self._rng.choice(string.ascii_lowercase) for _ in range(key_len))
-                result[key] = self._rng.randint(-10, 10)
+                if self._hint_ints and self._rng.random() < 0.30:
+                    result[key] = self._rng.choice(self._hint_ints)
+                else:
+                    result[key] = self._rng.randint(-10, 10)
             return result
         if t.startswith("tuple["):
             length = self._rng.randint(0, 8)
-            return tuple(self._rng.randint(-10, 10) for _ in range(length))
+            pool = self._hint_ints if self._hint_ints else None
+            items_t = []
+            for _ in range(length):
+                if pool and self._rng.random() < 0.30:
+                    items_t.append(self._rng.choice(pool))
+                else:
+                    items_t.append(self._rng.randint(-10, 10))
+            return tuple(items_t)
         # Fallback
         return self._rng.randint(-10, 10)
 
@@ -710,14 +783,38 @@ def fuzz_entry(
     for t in existing_ntests:
         all_seeds.append(tuple(t))
 
-    fuzzer = InputFuzzer(param_types, seed=rng_seed)
+    # -- White-box analysis ------------------------------------------------
+    # Analyse both function sources and merge hints so the fuzzer targets
+    # constants / boundary values from both implementations.
+    p1_hints = analyse_source(p1_source)
+    p2_hints = analyse_source(p2_source)
+    merged = ASTHints()
+    merged.int_constants = p1_hints.int_constants | p2_hints.int_constants
+    merged.float_constants = p1_hints.float_constants | p2_hints.float_constants
+    merged.str_constants = p1_hints.str_constants | p2_hints.str_constants
+    merged.bool_constants = p1_hints.bool_constants | p2_hints.bool_constants
+    merged.branch_count = p1_hints.branch_count + p2_hints.branch_count
+    merged.comparison_ops = p1_hints.comparison_ops + p2_hints.comparison_ops
+
+    fuzzer = InputFuzzer(param_types, seed=rng_seed, hints=merged)
+
+    # -- Coverage tracker --------------------------------------------------
+    coverage = CoverageTracker()
 
     new_tests: list[tuple] = []
+    # Keep the inputs that increased coverage so we can prefer mutating them
+    coverage_seeds: list[tuple] = []
     new_keys: set = set()
     start_time = time.monotonic()
 
+    prev_cov_lines = 0
+    prev_cov_branches = 0
+
     attempts = 0
     max_attempts = max_tests * 200  # avoid infinite loops
+    # Use coverage tracing every Nth candidate to limit overhead.
+    # Tracing every candidate is expensive; every 3rd keeps good guidance.
+    _COV_TRACE_INTERVAL = 3
 
     while (
         len(new_tests) < max_tests
@@ -726,8 +823,15 @@ def fuzz_entry(
     ):
         attempts += 1
 
-        # Alternate between mutation of existing seeds and random generation
-        if all_seeds and fuzzer._rng.random() < 0.7:
+        # Choose mutation source:
+        #  - 40% from coverage-increasing seeds (if any)
+        #  - 30% from all existing seeds
+        #  - 30% fully random
+        rand_val = fuzzer._rng.random()
+        if coverage_seeds and rand_val < 0.4:
+            seed_inp = fuzzer._rng.choice(coverage_seeds)
+            candidate = fuzzer.mutate(seed_inp)
+        elif all_seeds and rand_val < 0.7:
             seed_inp = fuzzer._rng.choice(all_seeds)
             candidate = fuzzer.mutate(seed_inp)
         else:
@@ -745,10 +849,29 @@ def fuzz_entry(
         if key in existing_keys or key in new_keys:
             continue
 
-        # Validate: p1 must not crash on this input
-        _, err = _run_with_timeout(p1_fn, candidate, per_call_timeout)
+        # Periodically use coverage-guided validation; otherwise use the
+        # lightweight timeout-only path.  This balances coverage insight
+        # against the overhead of sys.settrace.
+        use_tracing = (attempts % _COV_TRACE_INTERVAL == 0)
+
+        if use_tracing:
+            _, err = coverage.run(
+                p1_fn, candidate, timeout=per_call_timeout,
+            )
+        else:
+            _, err = _run_with_timeout(p1_fn, candidate, per_call_timeout)
+
         if err is not None:
             continue
+
+        # Check if this traced input increased coverage
+        if use_tracing:
+            cur_lines = coverage.lines_covered_count
+            cur_branches = coverage.branches_covered_count
+            if cur_lines > prev_cov_lines or cur_branches > prev_cov_branches:
+                coverage_seeds.append(candidate)
+                prev_cov_lines = cur_lines
+                prev_cov_branches = cur_branches
 
         new_keys.add(key)
         new_tests.append(candidate)
@@ -798,6 +921,7 @@ def fuzz_entry(
         else:
             status = "fail"
 
+    cov_report = coverage.report()
     result.update({
         "new_tests_generated": len(new_tests),
         "new_ptests": len(new_ptests),
@@ -808,6 +932,12 @@ def fuzz_entry(
         "status": status,
         "fuzz_time": round(fuzz_time, 2),
         "fuzz_attempts": attempts,
+        "coverage_lines": cov_report.lines_covered_count,
+        "coverage_branches": cov_report.branches_covered_count,
+        "coverage_seeds_found": len(coverage_seeds),
+        "hint_int_count": len(merged.int_constants),
+        "hint_float_count": len(merged.float_constants),
+        "hint_str_count": len(merged.str_constants),
     })
 
     return result
