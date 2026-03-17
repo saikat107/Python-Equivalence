@@ -189,7 +189,7 @@ src/
 data/
 └── benchmark_v1.json              # Pre-generated benchmark dataset
 docs/                              # Detailed documentation
-tests/                             # Test suite (~253 tests)
+tests/                             # Test suite (253 tests)
 ```
 
 ---
